@@ -52,7 +52,14 @@ const SAVINGS_GOALS = [
 const SETTINGS = {
   user: { name: 'Vasanth', initial: 'V' },
   currency: 'USD',
-  monthlyBudget: 4200
+  monthlyBudget: 4200,
+  // Income configuration
+  // Semi-monthly = exactly 2 paychecks every month = 24/year (not biweekly 26)
+  // Monthly income = paycheckAmount × 2; annual = paycheckAmount × 24
+  paycheckAmount: 2100,          // net (take-home) amount per paycheck
+  paycheckSchedule: 'semi-monthly', // 'semi-monthly' = 2x/month, 24/year
+  paycheckDays: [14, 28],        // approximate pay dates within the month
+  budgetFromIncome: true,        // when true, monthlyBudget auto-tracks paycheckAmount × 2
 };
 
 /* --------- Transactions: 3 months of demo data --------- */

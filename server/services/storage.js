@@ -25,6 +25,8 @@ async function atomicWrite(filepath, contents) {
   const tmp = `${filepath}.tmp`;
   await fs.writeFile(tmp, contents, 'utf8');
   await fs.rename(tmp, filepath);
+  await fs.copyFile(tmp, filepath);
+  await fs.unlink(tmp);
 }
 
 function monthKey(dateStr) {
@@ -51,7 +53,8 @@ export async function readJSON(filename, fallback = null) {
 
 export async function writeJSON(filename, data) {
   await ensureDir(DATA_DIR);
-  await atomicWrite(path.join(DATA_DIR, filename), JSON.stringify(data, null, 2));
+    const filepath = path.join(DATA_DIR, filename);
+  await fs.writeFile(filepath, JSON.stringify(data, null, 2), 'utf8');
 }
 
 /* --------- JSONL helpers (transactions) --------- */
