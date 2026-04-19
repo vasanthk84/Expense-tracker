@@ -1,10 +1,8 @@
 /**
  * server/index.js — Express app entry
- * - Auto-seeds on first run if data dir is empty
- * - Logs requests in dev
- * - Centralized error handler
  */
 import express from 'express';
+import cors from 'cors';
 import path from 'node:path';
 import fs from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -16,14 +14,33 @@ import reportsRouter from './routes/reports.js';
 import adminRouter from './routes/admin.js';
 
 import { seed } from './services/seed.js';
-import { readJSON } from './services/storage.js';
+import { readJSON } from './services/storage.proxy.js';
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DATA_DIR = path.resolve(__dirname, 'data');
+const __dirname  = path.dirname(__filename);
+const DATA_DIR   = path.resolve(__dirname, 'data');
+const PORT       = process.env.PORT || 3001;
 
-const PORT = process.env.PORT || 3001;
 const app = express();
+
+// ── CORS ────────────────────────────────────────────────────────────────────
+// Allow requests from the deployed frontend AND local dev
+const ALLOWED_ORIGINS = [
+  'https://expense-tracker-813p.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:4173'
+];
+
+app.use(cors({
+  origin: (origin, cb) => {
+    // Allow server-to-server / curl (no origin) and listed origins
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+}));
 
 app.use(express.json({ limit: '1mb' }));
 
@@ -39,10 +56,10 @@ app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
 // Mount routes
 app.use('/api/transactions', transactionsRouter);
-app.use('/api', configRouter);                  // budgets, categories, savings, settings
-app.use('/api/analytics', analyticsRouter);
-app.use('/api/reports', reportsRouter);
-app.use('/api/admin', adminRouter);
+app.use('/api',              configRouter);
+app.use('/api/analytics',    analyticsRouter);
+app.use('/api/reports',      reportsRouter);
+app.use('/api/admin',        adminRouter);
 
 // 404 for unknown API routes
 app.use('/api/*', (_req, res) => res.status(404).json({ error: 'not found' }));
@@ -53,10 +70,7 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'internal_server_error', message: err.message });
 });
 
-/**
- * Auto-seed on first run.
- * If settings.json doesn't exist yet, populate with demo data.
- */
+/* ── Bootstrap (local dev only) ────────────────────────────────────────── */
 async function bootstrap() {
   try {
     await fs.mkdir(DATA_DIR, { recursive: true });
@@ -74,10 +88,10 @@ async function bootstrap() {
 }
 
 if (process.env.VERCEL) {
-  // On Vercel, just export the app (Vercel will handle the server)
+  // Vercel: export app for the api/index.js handler
   export default app;
 } else {
-  // Local development: run bootstrap and start server
+  // Local: boot and listen
   bootstrap().then(() => {
     app.listen(PORT, () => {
       console.log(`\n🟢 Ledger API listening on http://localhost:${PORT}`);

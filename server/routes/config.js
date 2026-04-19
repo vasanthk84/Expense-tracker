@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readJSON, writeJSON } from '../services/storage.js';
+import { readJSON, writeJSON } from '../services/storage.proxy.js';   // ← changed
 
 const router = Router();
 
@@ -10,9 +10,8 @@ router.get('/budgets', async (_req, res, next) => {
 
 router.put('/budgets', async (req, res, next) => {
   try {
-    if (typeof req.body !== 'object' || Array.isArray(req.body)) {
+    if (typeof req.body !== 'object' || Array.isArray(req.body))
       return res.status(400).json({ error: 'budgets must be an object' });
-    }
     await writeJSON('budgets.json', req.body);
     res.json(req.body);
   } catch (e) { next(e); }
@@ -21,9 +20,8 @@ router.put('/budgets', async (req, res, next) => {
 router.patch('/budgets/:categoryId', async (req, res, next) => {
   try {
     const budgets = await readJSON('budgets.json', {});
-    if (typeof req.body.amount !== 'number' || req.body.amount < 0) {
+    if (typeof req.body.amount !== 'number' || req.body.amount < 0)
       return res.status(400).json({ error: 'amount must be a non-negative number' });
-    }
     budgets[req.params.categoryId] = req.body.amount;
     await writeJSON('budgets.json', budgets);
     res.json(budgets);
@@ -42,9 +40,8 @@ router.get('/savings-goals', async (_req, res, next) => {
 
 router.put('/savings-goals', async (req, res, next) => {
   try {
-    if (!Array.isArray(req.body)) {
+    if (!Array.isArray(req.body))
       return res.status(400).json({ error: 'goals must be an array' });
-    }
     await writeJSON('savings-goals.json', req.body);
     res.json(req.body);
   } catch (e) { next(e); }

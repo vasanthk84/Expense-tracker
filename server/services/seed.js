@@ -6,7 +6,7 @@ import {
   writeJSON,
   appendTransaction,
   clearAllData
-} from './storage.js';
+} from './storage.proxy.js';   // ← changed from './storage.js'
 
 function id() {
   return 'txn_' + Math.random().toString(36).slice(2, 10);
@@ -56,7 +56,6 @@ const SETTINGS = {
 };
 
 /* --------- Transactions: 3 months of demo data --------- */
-/* Helper: build a transaction record */
 function txn(date, merchant, amount, category, note = '') {
   return {
     id: id(),
@@ -71,7 +70,7 @@ function txn(date, merchant, amount, category, note = '') {
 }
 
 const TRANSACTIONS = [
-  /* ---- November 2025 (current month - matches prototype) ---- */
+  /* ---- November 2025 ---- */
   txn('2025-11-18', 'Whole Foods Market', 84.32, 'groceries'),
   txn('2025-11-18', 'Spotify Family',     16.99, 'subs', 'Recurring'),
   txn('2025-11-17', 'Izakaya Kuma',       62.40, 'dining'),
@@ -156,7 +155,6 @@ export async function seed() {
 }
 
 export async function clearAndInit() {
-  // Clean slate but with empty defaults so the app doesn't crash
   await clearAllData();
   await writeJSON('categories.json',    CATEGORIES);
   await writeJSON('budgets.json',       {});

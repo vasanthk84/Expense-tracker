@@ -1,15 +1,21 @@
 /**
  * client.js — base HTTP client.
- * All API calls go through here. Throws ApiError on non-2xx.
+ *
+ * In local dev, VITE_API_BASE is empty so requests go to /api/* (proxied by Vite).
+ * In production, VITE_API_BASE = https://your-api.vercel.app so calls go cross-origin.
  */
 
 export class ApiError extends Error {
   constructor(message, status, details) {
     super(message);
-    this.status = status;
+    this.status  = status;
     this.details = details;
   }
 }
+
+// Set VITE_API_BASE in the API project's Vercel env vars.
+// Leave it empty / unset for local dev — Vite proxy handles it.
+const BASE = import.meta.env.VITE_API_BASE || '';
 
 async function request(method, path, body) {
   const opts = {
@@ -20,7 +26,7 @@ async function request(method, path, body) {
 
   let res;
   try {
-    res = await fetch(`/api${path}`, opts);
+    res = await fetch(`${BASE}/api${path}`, opts);
   } catch (networkErr) {
     throw new ApiError('Network error — is the server running?', 0, networkErr);
   }
@@ -42,9 +48,9 @@ async function request(method, path, body) {
 }
 
 export const api = {
-  get:    (path)        => request('GET', path),
-  post:   (path, body)  => request('POST', path, body),
-  put:    (path, body)  => request('PUT', path, body),
-  patch:  (path, body)  => request('PATCH', path, body),
+  get:    (path)        => request('GET',    path),
+  post:   (path, body)  => request('POST',   path, body),
+  put:    (path, body)  => request('PUT',    path, body),
+  patch:  (path, body)  => request('PATCH',  path, body),
   delete: (path)        => request('DELETE', path)
 };

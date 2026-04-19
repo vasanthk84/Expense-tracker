@@ -16,13 +16,16 @@ export default function SettingsScreen() {
   const { theme, toggleTheme } = useTheme();
   const settings = useSettings();
   const status = useAdminStatus();
-  const { reset } = useAdminMutations();
+  const { reset, migrate } = useAdminMutations();
   const toast = useToast();
 
-  const [confirm, setConfirm] = useState(null); // 'clear' | 'seed' | null
-  const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm]       = useState(null); // 'clear' | 'seed' | 'migrate' | null
+  const [busy, setBusy]             = useState(false);
+  const [migrateResult, setMigrateResult] = useState(null);
 
   const isDemo = status.data?.isDemo;
+  // Show migrate section only in local dev (no VITE_API_BASE means we're proxying locally)
+  const isLocal = !import.meta.env.VITE_API_BASE;
 
   const performReset = async (mode) => {
     setBusy(true);
@@ -38,12 +41,23 @@ export default function SettingsScreen() {
     }
   };
 
+  const performMigrate = async () => {
+    setBusy(true);
+    try {
+      const result = await migrate();
+      setMigrateResult(result.migrated);
+      toast.show(`Migrated ${result.migrated.transactions} transactions to KV ✓`, { icon: 'check' });
+      setConfirm(null);
+    } catch (err) {
+      toast.show('Migration failed — check KV env vars are set (vercel env pull)');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
-      <AppHeader
-        label="Account"
-        title="Settings"
-      />
+      <AppHeader label="Account" title="Settings" />
 
       <SectionHead title="Profile" />
       <AsyncBoundary state={settings}>
@@ -95,20 +109,73 @@ export default function SettingsScreen() {
         <div className="settings-row">
           <div>
             <div className="settings-row-label">Storage</div>
-            <div className="settings-row-sub">JSONL files in <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>server/data/</code></div>
+            <div className="settings-row-sub">
+              {isLocal
+                ? 'Local filesystem (server/data/)'
+                : 'Vercel KV (Redis)'}
+            </div>
           </div>
-          <div className="settings-row-value">
-            {isDemo ? 'Demo' : 'Live'}
-          </div>
+          <div className="settings-row-value">{isDemo ? 'Demo' : 'Live'}</div>
         </div>
       </Card>
 
-      {/* Danger zone */}
+      {/* ── Migrate to KV — only shown in local dev ── */}
+      {isLocal && (
+        <>
+          <SectionHead title="Deploy to Vercel" />
+          <Card style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 14 }}>
+              <div style={{
+                width: 36, height: 36, borderRadius: 10,
+                background: 'var(--primary-soft)', color: 'var(--primary)',
+                display: 'grid', placeItems: 'center', flexShrink: 0
+              }}>
+                <Icon name="arrowUp" size={16} />
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--ink)', marginBottom: 3 }}>
+                  Copy local data → Vercel KV
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--ink-3)', lineHeight: 1.5 }}>
+                  Reads all your local JSONL files and writes them into KV so your
+                  real expenses appear on the deployed site. Run{' '}
+                  <code style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>vercel env pull</code>{' '}
+                  first so KV credentials are available locally.
+                </div>
+              </div>
+            </div>
+
+            {migrateResult && (
+              <div style={{
+                background: 'var(--primary-soft)', borderRadius: 8,
+                padding: '10px 14px', marginBottom: 12,
+                fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--primary)'
+              }}>
+                ✓ Last migration: {migrateResult.transactions} transactions ·{' '}
+                {migrateResult.months} months · {migrateResult.categories} categories
+              </div>
+            )}
+
+            <button
+              className="btn-sm primary"
+              style={{ width: '100%', padding: '10px', fontSize: 13 }}
+              onClick={() => setConfirm('migrate')}
+            >
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <Icon name="arrowUp" size={14} />
+                Migrate local data to KV
+              </span>
+            </button>
+          </Card>
+        </>
+      )}
+
+      {/* ── Danger zone ── */}
       <div className="danger-zone">
         <div className="danger-zone-title">Danger zone</div>
         <div className="danger-zone-desc">
           {isDemo
-            ? 'Demo data is loaded. Clear it to start tracking real expenses, or restore it anytime to play with the prototype.'
+            ? 'Demo data is loaded. Clear it to start tracking real expenses, or restore it anytime.'
             : 'Reset your data. Restoring demo data overwrites whatever is currently saved.'}
         </div>
         <div className="danger-zone-actions">
@@ -125,8 +192,36 @@ export default function SettingsScreen() {
         </div>
       </div>
 
-      {/* Confirmation modal */}
-      <Modal open={!!confirm} onClose={() => !busy && setConfirm(null)}>
+      {/* ── Confirmation modals ── */}
+
+      {/* Migrate confirmation */}
+      <Modal open={confirm === 'migrate'} onClose={() => !busy && setConfirm(null)}>
+        <div className="confirm-icon" style={{ background: 'var(--primary-soft)', color: 'var(--primary)' }}>
+          <Icon name="arrowUp" size={22} strokeWidth={2} />
+        </div>
+        <div className="modal-title" style={{ textAlign: 'center' }}>
+          Copy local data to KV?
+        </div>
+        <div className="confirm-text">
+          This will overwrite anything currently in Vercel KV with your local data.
+          Make sure you've run <code style={{ fontFamily: 'var(--font-mono)' }}>vercel env pull</code> so
+          KV credentials are available. This cannot be undone.
+        </div>
+        <Button size="md" onClick={performMigrate}>
+          {busy ? 'Migrating…' : 'Yes, copy to KV'}
+        </Button>
+        <button
+          className="btn-sm"
+          style={{ width: '100%', marginTop: 8, background: 'transparent', border: 'none', color: 'var(--ink-3)' }}
+          onClick={() => setConfirm(null)}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+      </Modal>
+
+      {/* Reset / seed confirmation */}
+      <Modal open={confirm === 'clear' || confirm === 'seed'} onClose={() => !busy && setConfirm(null)}>
         <div className="confirm-icon">
           <Icon name="alert" size={22} strokeWidth={2} />
         </div>
