@@ -12,21 +12,20 @@ import {
   useTrend,
   useComparison,
   useTransactions,
+  useMonthSummary,
 } from '../hooks/useData.js';
 import { currentMonth, monthBounds, formatMoney, pad } from '../utils/date.js';
 
 const RANGE_OPTIONS = [
-  { id: 'week', label: 'Week' },
-  { id: 'month', label: 'Month' },
+  { id: 'week',    label: 'Week' },
+  { id: 'month',   label: 'Month' },
   { id: 'quarter', label: 'Quarter' },
-  { id: 'year', label: 'Year' },
+  { id: 'year',    label: 'Year' },
 ];
 
 function rangeBounds(rangeId) {
   const today = new Date();
-  const fmt = (d) =>
-    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-
+  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   switch (rangeId) {
     case 'week': {
       const sun = new Date(today);
@@ -37,13 +36,8 @@ function rangeBounds(rangeId) {
       const qStart = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
       return { from: fmt(qStart), to: fmt(today), trendCount: 3 };
     }
-    case 'year': {
-      return {
-        from: `${today.getFullYear()}-01-01`,
-        to: fmt(today),
-        trendCount: 12,
-      };
-    }
+    case 'year':
+      return { from: `${today.getFullYear()}-01-01`, to: fmt(today), trendCount: 12 };
     case 'month':
     default: {
       const m = currentMonth();
@@ -56,7 +50,6 @@ function rangeBounds(rangeId) {
 function useDailyExpenses(month) {
   const { from, to } = monthBounds(month);
   const txns = useTransactions({ from, to });
-
   const dailyData = useMemo(() => {
     if (!txns.data) return null;
     const [y, m] = month.split('-').map(Number);
@@ -69,10 +62,9 @@ function useDailyExpenses(month) {
     return Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
       const dateStr = `${month}-${pad(day)}`;
-      return { label: String(day), value: totals[dateStr] || 0 };
+      return { label: String(day), current: totals[dateStr] || 0, previous: 0 };
     });
   }, [txns.data, month]);
-
   return { ...txns, data: dailyData };
 }
 
@@ -82,11 +74,23 @@ export default function AnalyticsScreen() {
   const { from, to, trendCount } = rangeBounds(range);
 
   const breakdown = useCategoryBreakdown(from, to);
-  const trend = useTrend(month, trendCount);
+  const trend     = useTrend(month, trendCount);
   const comparison = useComparison(month);
-  const daily = useDailyExpenses(month);
+  const daily     = useDailyExpenses(month);
+  const summary   = useMonthSummary(month);
 
   const highlightIdx = trend.data ? trend.data.length - 2 : null;
+
+  // Map comparison items to BarChart format
+  const comparisonBars = useMemo(() => {
+    if (!comparison.data) return null;
+    return comparison.data.map((d) => ({
+      label: (d.name || d.id || '').slice(0, 5),
+      current: d.current,
+      previous: d.previous,
+      tone: d.tone,
+    }));
+  }, [comparison.data]);
 
   return (
     <>
@@ -96,45 +100,74 @@ export default function AnalyticsScreen() {
         right={<button className="icon-btn"><Icon name="download" size={16} /></button>}
       />
 
+      {/* Summary strip */}
+      <AsyncBoundary state={summary}>
+        {summary.data && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 4 }}>
+            <StatChip label="Spent" value={formatMoney(summary.data.spent, { withCents: false })} />
+            <StatChip label="Transactions" value={String(summary.data.txnCount)} />
+            <StatChip label="Daily avg" value={formatMoney(summary.data.spent / Math.max(1, new Date().getDate()), { withCents: false })} />
+          </div>
+        )}
+      </AsyncBoundary>
+
       <Segmented options={RANGE_OPTIONS} value={range} onChange={setRange} />
 
+      {/* Spending by category donut */}
       <Card variant="chart">
         <div className="chart-head">
-          <div className="chart-title">Spending by category</div>
+          <div>
+            <div className="chart-title">Spending by category</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>Where your money goes</div>
+          </div>
           <div className="chart-badge">{rangeLabel(range)}</div>
         </div>
-        <AsyncBoundary state={breakdown}>
-          {breakdown.data && (
-            <DonutChart
-              slices={breakdown.data.slices}
-              total={formatMoney(breakdown.data.total, { withCents: false })}
-            />
+        <AsyncBoundary state={breakdown} emptyTitle="No spending yet" emptyIcon="savings">
+          {breakdown.data && breakdown.data.slices?.length > 0 && (
+            <>
+              <DonutChart
+                slices={breakdown.data.slices}
+                total={formatMoney(breakdown.data.total, { withCents: false })}
+              />
+              {/* Slice legend */}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', marginTop: 12 }}>
+                {breakdown.data.slices.map((s) => (
+                  <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--ink-2)' }}>
+                    <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                    {s.label} · {formatMoney(s.value, { withCents: false })}
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </AsyncBoundary>
       </Card>
 
+      {/* Daily expenses bar chart */}
       <Card variant="chart">
         <div className="chart-head">
-          <div className="chart-title">Daily expenses</div>
+          <div>
+            <div className="chart-title">Daily expenses</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>Each day this month</div>
+          </div>
           <div className="chart-badge">{currentMonthLabel()}</div>
         </div>
         <AsyncBoundary state={daily}>
-          {daily.data && daily.data.length > 0 && (
-            <BarChart
-              data={daily.data.map((d) => ({
-                label: d.label,
-                current: d.value,
-                previous: 0,
-              }))}
-              hidePrevious
-            />
+          {daily.data && daily.data.some((d) => d.current > 0) && (
+            <BarChart data={daily.data} hidePrevious />
           )}
         </AsyncBoundary>
       </Card>
 
+      {/* Monthly trend line chart */}
       <Card variant="chart">
         <div className="chart-head">
-          <div className="chart-title">Monthly trend</div>
+          <div>
+            <div className="chart-title">Monthly spending trend</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>
+              {trendCount}-month history
+            </div>
+          </div>
           <div className="chart-badge">{trendCount}M</div>
         </div>
         <AsyncBoundary state={trend}>
@@ -152,13 +185,19 @@ export default function AnalyticsScreen() {
         </AsyncBoundary>
       </Card>
 
+      {/* Category comparison bar chart */}
       <Card variant="chart">
         <div className="chart-head">
-          <div className="chart-title">Category comparison</div>
+          <div>
+            <div className="chart-title">Category comparison</div>
+            <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 2 }}>This month vs last month</div>
+          </div>
           <div className="chart-badge">vs last month</div>
         </div>
-        <AsyncBoundary state={comparison}>
-          {comparison.data && <BarChart data={comparison.data} />}
+        <AsyncBoundary state={comparison} emptyTitle="No data yet" emptyIcon="savings">
+          {comparisonBars && comparisonBars.length > 0 && (
+            <BarChart data={comparisonBars} />
+          )}
         </AsyncBoundary>
         <div className="chart-legend">
           <span className="chart-legend-item">
@@ -174,6 +213,21 @@ export default function AnalyticsScreen() {
 
       <div style={{ height: 30 }} />
     </>
+  );
+}
+
+function StatChip({ label, value }) {
+  return (
+    <div style={{
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
+      borderRadius: 12,
+      padding: '10px 12px',
+      textAlign: 'center',
+    }}>
+      <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{value}</div>
+      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>{label}</div>
+    </div>
   );
 }
 

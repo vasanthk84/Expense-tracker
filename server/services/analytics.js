@@ -78,14 +78,20 @@ function normalizeBudgets(raw) {
 
 export async function monthSummary(yyyymm) {
   const { from, to } = monthBounds(yyyymm);
-  const txns = await readTransactions({ from, to });
-  const total = totalSpending(txns);
-  const avgDaily = averageDailySpent(txns, yyyymm);
+  const [txns, settings] = await Promise.all([
+    readTransactions({ from, to }),
+    readJSON('settings.json', { monthlyBudget: 0 })
+  ]);
+  const spent = totalSpending(txns);
+  const budget = settings.monthlyBudget || 0;
   return {
     month: yyyymm,
-    total: Math.round(total * 100) / 100,
-    avgDaily: Math.round(avgDaily * 100) / 100,
-    count: txns.filter((t) => !t.isIncome).length
+    monthLabel: monthLabel(yyyymm),
+    spent: Math.round(spent * 100) / 100,
+    budget,
+    remaining: Math.max(0, Math.round((budget - spent) * 100) / 100),
+    daysLeft: daysRemaining(yyyymm),
+    txnCount: txns.length
   };
 }
 
@@ -97,21 +103,28 @@ export async function budgetUtilization(yyyymm) {
     readJSON('categories.json', [])
   ]);
   const budgets = normalizeBudgets(rawBudgets);
+  const budgetMap = Object.fromEntries(budgets.map((b) => [b.categoryId, b.amount || 0]));
   const byCat = spendingByCategory(txns);
-  const rows = budgets.map((b) => {
-    const cat = categories.find((c) => c.id === b.categoryId) || { name: b.categoryId };
-    const spent = byCat[b.categoryId] || 0;
-    const remaining = Math.max(0, (b.amount || 0) - spent);
-    const pct = b.amount ? (spent / b.amount) * 100 : 0;
-    return {
-      categoryId: b.categoryId,
-      name: cat.name,
-      budget: b.amount,
-      spent: Math.round(spent * 100) / 100,
-      remaining: Math.round(remaining * 100) / 100,
-      pct: Math.round(pct)
-    };
-  }).sort((a, b) => b.pct - a.pct);
+  const rows = categories
+    .filter((c) => c.id !== 'income')
+    .map((cat) => {
+      const budget = budgetMap[cat.id] || 0;
+      const spent = byCat[cat.id] || 0;
+      const remaining = Math.max(0, budget - spent);
+      const pct = budget ? (spent / budget) * 100 : 0;
+      return {
+        id: cat.id,
+        categoryId: cat.id,
+        name: cat.name,
+        icon: cat.icon || null,
+        tone: cat.tone || null,
+        budget,
+        spent: Math.round(spent * 100) / 100,
+        remaining: Math.round(remaining * 100) / 100,
+        pct: Math.round(pct)
+      };
+    })
+    .sort((a, b) => b.pct - a.pct);
   return rows;
 }
 
@@ -193,33 +206,56 @@ export async function forecast(endMonth, past = 6, future = 6) {
 
 export async function insights(yyyymm) {
   const { from, to } = monthBounds(yyyymm);
-  const [txns, rawBudgets, categories] = await Promise.all([
+  const prev = monthBounds(offsetMonth(yyyymm, -1));
+  const [curTxns, prevTxns, rawBudgets, categories] = await Promise.all([
     readTransactions({ from, to }),
+    readTransactions(prev),
     readJSON('budgets.json', []),
     readJSON('categories.json', [])
   ]);
   const budgets = normalizeBudgets(rawBudgets);
-  const byCat = spendingByCategory(txns);
-  const topCat = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0];
-  const topBudgetOver = budgets
-    .map((b) => ({ ...b, spent: byCat[b.categoryId] || 0 }))
-    .filter((b) => b.amount > 0)
-    .sort((a, b) => (b.spent / b.amount) - (a.spent / a.amount))[0];
+  const out = [];
+  const curBy = spendingByCategory(curTxns);
+  const prevBy = spendingByCategory(prevTxns);
 
-  return {
-    topCategory: topCat ? {
-      id: topCat[0],
-      name: (categories.find((c) => c.id === topCat[0]) || {}).name || topCat[0],
-      amount: Math.round(topCat[1] * 100) / 100
-    } : null,
-    mostUtilizedBudget: topBudgetOver ? {
-      categoryId: topBudgetOver.categoryId,
-      name: (categories.find((c) => c.id === topBudgetOver.categoryId) || {}).name || topBudgetOver.categoryId,
-      pct: Math.round((topBudgetOver.spent / topBudgetOver.amount) * 100),
-      spent: Math.round(topBudgetOver.spent * 100) / 100,
-      budget: Math.round(topBudgetOver.amount * 100) / 100
-    } : null
-  };
+  for (const cat of categories) {
+    if (cat.id === 'income') continue;
+    const cur = curBy[cat.id] || 0;
+    const prev = prevBy[cat.id] || 0;
+    if (prev > 50 && cur > prev * 1.15) {
+      const pct = Math.round(((cur - prev) / prev) * 100);
+      out.push({ type: 'spike', icon: 'spark', title: `${cat.name} up sharply`, body: `You spent ${pct}% more on ${cat.name.toLowerCase()} than last month.`, highlight: `${pct}% more`, category: cat.id });
+      break;
+    }
+  }
+
+  const budgetMap = Object.fromEntries(budgets.map((b) => [b.categoryId, b.amount || 0]));
+  const overs = categories
+    .filter((c) => c.id !== 'income')
+    .map((c) => ({ category: c.name, over: Math.round(((curBy[c.id] || 0) - (budgetMap[c.id] || 0)) * 100) / 100 }))
+    .filter((x) => x.over > 0)
+    .sort((a, b) => b.over - a.over);
+  if (overs.length) {
+    const top = overs[0];
+    out.push({ type: 'over-budget', icon: 'alert', title: `Over budget on ${top.category}`, body: `You're $${top.over.toFixed(2)} over your ${top.category.toLowerCase()} budget this month.`, highlight: `$${top.over.toFixed(2)}`, category: top.category.toLowerCase() });
+  }
+
+  const dayTotals = [0,0,0,0,0,0,0];
+  const dayCounts = [0,0,0,0,0,0,0];
+  for (const t of curTxns) {
+    if (t.isIncome) continue;
+    const dow = new Date(t.date).getDay();
+    dayTotals[dow] += t.amount;
+    dayCounts[dow]++;
+  }
+  const dayAvgs = dayTotals.map((total, i) => dayCounts[i] ? total / dayCounts[i] : 0);
+  let topDay = 0;
+  for (let i = 1; i < 7; i++) if (dayAvgs[i] > dayAvgs[topDay]) topDay = i;
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  if (dayAvgs[topDay] > 0) {
+    out.push({ type: 'pattern', icon: 'spark', title: 'Spending pattern detected', body: `${dayNames[topDay]} is your highest-spend day, averaging $${Math.round(dayAvgs[topDay])}.`, highlight: `${dayNames[topDay]}`, pattern: { dayTotals, dayNames, topDay } });
+  }
+  return out;
 }
 
 export async function weeklyPattern(yyyymm) {
