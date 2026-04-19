@@ -7,11 +7,13 @@ import Icon from '../components/icons/Icon.jsx';
 import { AsyncBoundary } from '../components/ui/AsyncStates.jsx';
 import { useTransactions, useCategories } from '../hooks/useData.js';
 import { groupByDate } from '../utils/date.js';
+import EditExpenseModal from './EditExpenseModal.jsx';
 
 export default function ExpensesScreen() {
   const [activeCat, setActiveCat] = useState('all');
   const [query, setQuery] = useState('');
   const [collapsedDates, setCollapsedDates] = useState({});
+  const [editing, setEditing] = useState(null); // full txn object
 
   const txnsState = useTransactions({ category: activeCat });
   const categoriesState = useCategories();
@@ -130,6 +132,7 @@ export default function ExpensesScreen() {
                           tone,
                           isIncome: t.isIncome
                         }}
+                        onClick={() => setEditing(t)}
                       />
                     );
                   })}
@@ -147,6 +150,8 @@ export default function ExpensesScreen() {
       </AsyncBoundary>
 
       <div style={{ height: 30 }} />
+
+      <EditExpenseModal txn={editing} onClose={() => setEditing(null)} />
     </>
   );
 }
