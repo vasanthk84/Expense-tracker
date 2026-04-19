@@ -166,3 +166,12 @@ export async function clearAllData() {
   for (const m of months) await redis.del(`txn:${m}`);
   await redis.del('txn:index');
 }
+
+export async function batchWriteMonth(month, txns) {
+  const sorted = [...txns].sort((a, b) => {
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    return (b.createdAt || '').localeCompare(a.createdAt || '');
+  });
+  await redis.set(`txn:${month}`, JSON.stringify(sorted));
+  await addMonthToIndex(month);
+}
