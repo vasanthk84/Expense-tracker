@@ -11,9 +11,13 @@ import { groupByDate } from '../utils/date.js';
 export default function ExpensesScreen() {
   const [activeCat, setActiveCat] = useState('all');
   const [query, setQuery] = useState('');
+  const [collapsedDates, setCollapsedDates] = useState({});
 
   const txnsState = useTransactions({ category: activeCat });
   const categoriesState = useCategories();
+
+  const toggleDate = (date) =>
+    setCollapsedDates((prev) => ({ ...prev, [date]: !prev[date] }));
 
   // Build chip list from real categories (top 5)
   const chips = useMemo(() => {
@@ -54,7 +58,7 @@ export default function ExpensesScreen() {
       />
 
       <SearchBar
-        placeholder="Search transactions…"
+        placeholder="Search transactions\u2026"
         value={query}
         onChange={setQuery}
       />
@@ -73,29 +77,67 @@ export default function ExpensesScreen() {
         emptySub={query ? 'Try a different search term.' : 'Tap the + button to add one.'}
         emptyIcon="list"
       >
-        {grouped.map((group) => (
-          <div key={group.date}>
-            <div className="date-sep">{group.label}</div>
-            <div className="txn-list">
-              {group.items.map((t) => {
-                const { icon, tone } = catIcon(t.category);
-                return (
-                  <TxnRow
-                    key={t.id}
-                    txn={{
-                      name: t.merchant,
-                      meta: `${catLabel(t.category)}${t.note ? ` · ${t.note}` : ''}`,
-                      amount: t.amount,
-                      icon,
-                      tone,
-                      isIncome: t.isIncome
+        {grouped.map((group) => {
+          const isCollapsed = !!collapsedDates[group.date];
+          const dayTotal = group.items.reduce(
+            (sum, t) => (t.isIncome ? sum : sum + Math.abs(t.amount)),
+            0
+          );
+          return (
+            <div key={group.date}>
+              <div
+                className="date-sep"
+                onClick={() => toggleDate(group.date)}
+                style={{
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  userSelect: 'none',
+                }}
+              >
+                <span>{group.label}</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{
+                    fontSize: 12,
+                    color: 'var(--ink-2)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}>
+                    -${dayTotal.toFixed(2)}
+                  </span>
+                  <Icon
+                    name="chevron"
+                    size={13}
+                    style={{
+                      transition: 'transform 200ms ease',
+                      transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
                     }}
                   />
-                );
-              })}
+                </span>
+              </div>
+              {!isCollapsed && (
+                <div className="txn-list">
+                  {group.items.map((t) => {
+                    const { icon, tone } = catIcon(t.category);
+                    return (
+                      <TxnRow
+                        key={t.id}
+                        txn={{
+                          name: t.merchant,
+                          meta: `${catLabel(t.category)}${t.note ? ` \u00b7 ${t.note}` : ''}`,
+                          amount: t.amount,
+                          icon,
+                          tone,
+                          isIncome: t.isIncome
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         {grouped.length === 0 && filtered.length === 0 && query && (
           <div className="empty-state">
             <div className="empty-state-title">No matches</div>
