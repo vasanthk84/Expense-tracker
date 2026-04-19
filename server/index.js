@@ -87,11 +87,7 @@ async function bootstrap() {
   }
 }
 
-if (process.env.VERCEL) {
-  // Vercel: export app for the api/index.js handler
-  export default app;
-} else {
-  // Local: boot and listen
+if (!process.env.VERCEL) {
   bootstrap().then(() => {
     app.listen(PORT, () => {
       console.log(`\n🟢 Ledger API listening on http://localhost:${PORT}`);
@@ -99,3 +95,6 @@ if (process.env.VERCEL) {
     });
   });
 }
+
+// 2. Export the app at the top level (outside any IF)
+export default app;
