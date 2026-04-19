@@ -17,7 +17,9 @@ export class ApiError extends Error {
 // Leave it empty / unset for local dev — Vite proxy handles it.
 const BASE = import.meta.env.VITE_API_BASE || '';
 
-async function request(method, path, body) {
+const RETRY_DELAYS = [150, 400]; // ms — covers the ~200ms node --watch restart window
+
+async function request(method, path, body, attempt = 0) {
   const opts = {
     method,
     headers: { 'Content-Type': 'application/json' }
@@ -28,6 +30,11 @@ async function request(method, path, body) {
   try {
     res = await fetch(`${BASE}/api${path}`, opts);
   } catch (networkErr) {
+    // Retry on transient connection resets (ECONNRESET during server restarts)
+    if (attempt < RETRY_DELAYS.length) {
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS[attempt]));
+      return request(method, path, body, attempt + 1);
+    }
     throw new ApiError('Network error — is the server running?', 0, networkErr);
   }
 

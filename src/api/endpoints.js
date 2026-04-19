@@ -52,8 +52,10 @@ export const analyticsApi = {
     const qs = new URLSearchParams({ endMonth, past: past || 6, future: future || 6 }).toString();
     return api.get(`/analytics/forecast?${qs}`);
   },
-  insights:      (month) => api.get(`/analytics/insights${month ? `?month=${month}` : ''}`),
-  weeklyPattern: (month) => api.get(`/analytics/weekly-pattern${month ? `?month=${month}` : ''}`)
+  insights:      (month)                  => api.get(`/analytics/insights${month ? `?month=${month}` : ''}`),
+  weeklyPattern: (month)                  => api.get(`/analytics/weekly-pattern${month ? `?month=${month}` : ''}`),
+  budgetTrend:       (endMonth, count = 6)        => api.get(`/analytics/budget-trend?endMonth=${endMonth}&count=${count}`),
+  merchantBreakdown: (category, from, to)         => api.get(`/analytics/merchant-breakdown?category=${category}&from=${from}&to=${to}`)
 };
 
 /* ---- Reports ---- */

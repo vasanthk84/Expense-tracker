@@ -9,7 +9,14 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:3001',
-        changeOrigin: true
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('error', (err, req, res) => {
+            // Suppress noisy ECONNRESET logs during server restarts
+            if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED') return;
+            console.error('[proxy error]', err.message);
+          });
+        }
       }
     }
   }

@@ -188,11 +188,15 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 14px;
+  gap: 12px;
+  padding: 10px 16px;
+  margin-bottom: 0;
 }
-.budget-row:last-child { margin-bottom: 0; }
+.budget-row + .budget-row {
+  border-top: 1px solid var(--border);
+}
 
-.budget-cat { display: flex; align-items: center; gap: 10px; }
+.budget-cat { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
 
 .cat-icon {
   width: 34px;
@@ -209,8 +213,8 @@
 .cat-icon.danger  { background: var(--danger-soft);  color: var(--danger); }
 .cat-icon.sm { width: 32px; height: 32px; }
 
-.budget-meta { min-width: 0; }
-.budget-name { font-size: 13px; font-weight: 500; color: var(--ink); }
+.budget-meta { min-width: 0; flex: 1; }
+.budget-name { font-size: 13px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .budget-sub {
   font-size: 11px;
   color: var(--ink-3);

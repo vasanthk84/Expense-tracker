@@ -17,12 +17,13 @@ const now = () => new Date().toISOString();
 /* --------- Static reference data --------- */
 
 const CATEGORIES = [
-  { id: 'housing',    name: 'Housing',           icon: 'housing',      tone: 'default' },
+  { id: 'housing',    name: 'Housing',           icon: 'housing',      tone: 'default', recurring: true },
+  { id: 'rent',       name: 'Rent',              icon: 'housing',      tone: 'default', recurring: true },
   { id: 'groceries',  name: 'Groceries',         icon: 'food',         tone: 'primary' },
   { id: 'dining',     name: 'Dining out',        icon: 'fun',          tone: 'accent'  },
   { id: 'transport',  name: 'Transport',         icon: 'transport',    tone: 'default' },
-  { id: 'utilities',  name: 'Utilities',         icon: 'utilities',    tone: 'default' },
-  { id: 'subs',       name: 'Subscriptions',     icon: 'subscription', tone: 'default' },
+  { id: 'utilities',  name: 'Utilities',         icon: 'utilities',    tone: 'default', recurring: true },
+  { id: 'subs',       name: 'Subscriptions',     icon: 'subscription', tone: 'default', recurring: true },
   { id: 'shopping',   name: 'Shopping',          icon: 'shop',         tone: 'accent'  },
   { id: 'health',     name: 'Health & wellness', icon: 'health',       tone: 'default' },
   { id: 'income',     name: 'Income',            icon: 'arrowUp',      tone: 'primary' }
@@ -30,6 +31,7 @@ const CATEGORIES = [
 
 const BUDGETS = {
   housing:   1500,
+  rent:      1800,
   groceries: 800,
   dining:    350,
   transport: 400,

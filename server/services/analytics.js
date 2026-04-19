@@ -124,9 +124,17 @@ export async function monthSummary(yyyymm) {
     readJSON('settings.json', { monthlyBudget: 0 })
   ]);
   const spent  = totalSpending(txns);
-  const income = totalIncome(txns);
   const budget = settings.monthlyBudget || 0;
   const dailyAvg = averageDailySpent(txns, yyyymm);
+
+  // Income: prefer actual income transactions; fall back to settings-derived monthly income
+  let income = totalIncome(txns);
+  if (income === 0 && settings.paycheckAmount > 0) {
+    const schedule   = settings.paycheckSchedule || 'semi-monthly';
+    const multiplier = schedule === 'biweekly' ? 26 / 12 : schedule === 'monthly' ? 1 : 2;
+    income = Math.round(settings.paycheckAmount * multiplier * 100) / 100;
+  }
+
   return {
     month: yyyymm,
     monthLabel: monthLabel(yyyymm),
@@ -221,6 +229,51 @@ export async function categoryBreakdown({ from, to }) {
   return { total: Math.round(total * 100) / 100, slices };
 }
 
+export async function budgetTrend(endMonth, count = 6) {
+  const [rawBudgets, settings] = await Promise.all([
+    readJSON('budgets.json', {}),
+    readJSON('settings.json', {})
+  ]);
+  const budgets     = normalizeBudgets(rawBudgets);
+  const totalBudget = settings.monthlyBudget ||
+    budgets.reduce((s, b) => s + (b.amount || 0), 0);
+
+  const result = [];
+  for (let i = count - 1; i >= 0; i--) {
+    const m = offsetMonth(endMonth, -i);
+    const { from, to } = monthBounds(m);
+    const txns  = await readTransactions({ from, to });
+    const spent = Math.round(totalSpending(txns) * 100) / 100;
+    result.push({ month: m, label: monthLabel(m, true), budget: totalBudget, spent });
+  }
+  return result;
+}
+
+export async function merchantBreakdown(category, from, to) {
+  const txns     = await readTransactions({ from, to });
+  const filtered = txns.filter((t) => !t.isIncome && t.category === category);
+
+  const byMerchant = {};
+  for (const t of filtered) {
+    byMerchant[t.merchant] = (byMerchant[t.merchant] || 0) + t.amount;
+  }
+
+  const total = Object.values(byMerchant).reduce((s, v) => s + v, 0) || 1;
+  const merchants = Object.entries(byMerchant)
+    .map(([merchant, amount]) => ({
+      merchant,
+      amount: Math.round(amount * 100) / 100,
+      pct:    Math.round((amount / total) * 100)
+    }))
+    .sort((a, b) => b.amount - a.amount);
+
+  return {
+    category,
+    total: Math.round(total * 100) / 100,
+    merchants
+  };
+}
+
 export async function monthlyTrend(endMonth, count = 6) {
   const months = [];
   for (let i = count - 1; i >= 0; i--) months.push(offsetMonth(endMonth, -i));
@@ -276,27 +329,41 @@ export async function categoryComparison(yyyymm) {
  *   lower[]    — { month, label, value } lower band (-1 stddev)
  */
 export async function forecast(endMonth, past = 6, future = 6) {
-  // ── 1. Fetch historical data ──────────────────────────────────────────────
+  // ── 1. Fetch historical data + recurring base ─────────────────────────────
   const histMonths = [];
   for (let i = past - 1; i >= 0; i--) histMonths.push(offsetMonth(endMonth, -i));
+
+  const [rawBudgets, categories] = await Promise.all([
+    readJSON('budgets.json', []),
+    readJSON('categories.json', [])
+  ]);
+  const budgets    = normalizeBudgets(rawBudgets);
+  const budgetMap  = Object.fromEntries(budgets.map((b) => [b.categoryId, b.amount || 0]));
+  // Guaranteed monthly floor = sum of all recurring category budgets
+  const recurringBase = categories
+    .filter((c) => c.recurring && c.id !== 'income')
+    .reduce((sum, c) => sum + (budgetMap[c.id] || 0), 0);
 
   const histData = [];
   for (const m of histMonths) {
     const { from, to } = monthBounds(m);
     const txns = await readTransactions({ from, to });
+    const total = totalSpending(txns);
+    // Use max of actual or recurring base so months with missing recurring
+    // transactions don't drag the regression down to 0
     histData.push({
       month: m,
       label: monthLabel(m, true),
-      value: Math.round(totalSpending(txns) * 100) / 100
+      value: Math.round(Math.max(total, recurringBase) * 100) / 100
     });
   }
 
-  // ── 2. Linear regression for trend ───────────────────────────────────────
-  const values = histData.map((d) => d.value);
-  const { slope, intercept } = linearRegression(values);
+  // ── 2. Linear regression on variable portion (total - recurringBase) ──────
+  const varValues = histData.map((d) => Math.max(0, d.value - recurringBase));
+  const { slope, intercept } = linearRegression(varValues);
 
   // Standard deviation of residuals → uncertainty band
-  const residuals = values.map((v, i) => v - (intercept + slope * i));
+  const residuals = varValues.map((v, i) => v - (intercept + slope * i));
   const stdDev = Math.sqrt(residuals.reduce((s, r) => s + r * r, 0) / Math.max(1, residuals.length));
 
   // ── 3. Build forecast points ──────────────────────────────────────────────
@@ -306,11 +373,12 @@ export async function forecast(endMonth, past = 6, future = 6) {
   const lowerPoints    = [];
 
   for (let i = 0; i <= future; i++) {
-    const m   = offsetMonth(endMonth, i);
-    const x   = joinIdx + i;
-    const val = Math.max(0, Math.round((intercept + slope * x) * 100) / 100);
-    const up  = Math.round((val + stdDev) * 100) / 100;
-    const lo  = Math.max(0, Math.round((val - stdDev) * 100) / 100);
+    const m      = offsetMonth(endMonth, i);
+    const x      = joinIdx + i;
+    const varVal = Math.max(0, intercept + slope * x);
+    const val    = Math.round((recurringBase + varVal) * 100) / 100;
+    const up     = Math.round((val + stdDev) * 100) / 100;
+    const lo     = Math.max(recurringBase, Math.round((val - stdDev) * 100) / 100);
     forecastPoints.push({ month: m, label: monthLabel(m, true), value: val });
     upperPoints.push(   { month: m, label: monthLabel(m, true), value: up  });
     lowerPoints.push(   { month: m, label: monthLabel(m, true), value: lo  });

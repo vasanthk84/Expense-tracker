@@ -49,6 +49,12 @@ export function useInsights(month) {
 export function useWeeklyPattern(month) {
   return useApi(() => analyticsApi.weeklyPattern(month), [month], { refetchOn: [EVENTS.TXN_CHANGED, EVENTS.DATA_RESET] });
 }
+export function useBudgetTrend(endMonth, count = 6) {
+  return useApi(() => analyticsApi.budgetTrend(endMonth, count), [endMonth, count], { refetchOn: [EVENTS.TXN_CHANGED, EVENTS.BUDGET_CHANGED, EVENTS.DATA_RESET] });
+}
+export function useMerchantBreakdown(category, from, to) {
+  return useApi(() => analyticsApi.merchantBreakdown(category, from, to), [category, from, to], { refetchOn: [EVENTS.TXN_CHANGED, EVENTS.DATA_RESET] });
+}
 export function useReports(type = 'monthly') {
   return useApi(() => reportsApi.list(type), [type], { refetchOn: [EVENTS.TXN_CHANGED, EVENTS.DATA_RESET] });
 }

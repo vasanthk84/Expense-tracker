@@ -14,17 +14,46 @@ import Icon from '../components/icons/Icon.jsx';
 import Modal from '../components/ui/Modal.jsx';
 import { AsyncBoundary } from '../components/ui/AsyncStates.jsx';
 import { useTransactions, useCategories, useInsights } from '../hooks/useData.js';
-import { groupByDate, currentMonth } from '../utils/date.js';
+import { groupByDate, currentMonth, monthBounds, pad } from '../utils/date.js';
 import EditExpenseModal from './EditExpenseModal.jsx';
+
+const DATE_RANGES = [
+  { id: 'all', label: 'All' },
+  { id: '1m',  label: '1M'  },
+  { id: '3m',  label: '3M'  },
+  { id: '6m',  label: '6M'  },
+  { id: '1y',  label: '1Y'  },
+];
+
+const SORT_CYCLES = ['newest', 'oldest', 'highest'];
+const SORT_LABELS = { newest: 'Newest', oldest: 'Oldest', highest: 'Highest' };
+const SORT_ICONS  = { newest: '↓', oldest: '↑', highest: '$' };
+
+function getDateBounds(rangeId) {
+  if (rangeId === 'all') return {};
+  const today = new Date();
+  const fmt   = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const to    = fmt(today);
+  if (rangeId === '1m') {
+    const m = currentMonth();
+    return { from: monthBounds(m).from, to };
+  }
+  const monthsBack = rangeId === '3m' ? 2 : rangeId === '6m' ? 5 : 11;
+  const d = new Date(today.getFullYear(), today.getMonth() - monthsBack, 1);
+  return { from: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`, to };
+}
 
 export default function ExpensesScreen() {
   const [activeCat,      setActiveCat]      = useState('all');
   const [query,          setQuery]          = useState('');
+  const [dateRange,      setDateRange]      = useState('1m');
+  const [sort,           setSort]           = useState('newest');
   const [collapsedDates, setCollapsedDates] = useState({});
   const [editing,        setEditing]        = useState(null);
-  const [notifOpen,      setNotifOpen]      = useState(false); // FIX: bell state
+  const [notifOpen,      setNotifOpen]      = useState(false);
 
-  const txnsState       = useTransactions({ category: activeCat });
+  const dateBounds = getDateBounds(dateRange);
+  const txnsState       = useTransactions({ category: activeCat, ...dateBounds });
   const categoriesState = useCategories();
   const insights        = useInsights(currentMonth());
 
@@ -58,14 +87,17 @@ export default function ExpensesScreen() {
   const filtered = useMemo(() => {
     if (!txnsState.data) return [];
     const q = query.trim().toLowerCase();
-    if (!q) return txnsState.data;
-    return txnsState.data.filter((t) =>
-      t.merchant.toLowerCase().includes(q) ||
-      t.note?.toLowerCase().includes(q)
-    );
-  }, [txnsState.data, query]);
+    const base = q
+      ? txnsState.data.filter((t) =>
+          t.merchant.toLowerCase().includes(q) || t.note?.toLowerCase().includes(q)
+        )
+      : txnsState.data;
+    if (sort === 'oldest') return [...base].reverse();
+    if (sort === 'highest') return [...base].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount));
+    return base;
+  }, [txnsState.data, query, sort]);
 
-  const grouped = useMemo(() => groupByDate(filtered), [filtered]);
+  const grouped = useMemo(() => (sort === 'highest' ? null : groupByDate(filtered)), [filtered, sort]);
 
   return (
     <>
@@ -101,6 +133,47 @@ export default function ExpensesScreen() {
         onChange={setQuery}
       />
 
+      {/* Date range + sort row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px 8px', overflowX: 'auto' }}>
+        {DATE_RANGES.map((r) => (
+          <button
+            key={r.id}
+            onClick={() => setDateRange(r.id)}
+            style={{
+              padding: '4px 10px',
+              borderRadius: 20,
+              border: '1px solid',
+              borderColor: dateRange === r.id ? 'var(--primary)' : 'var(--border)',
+              background: dateRange === r.id ? 'var(--primary-soft)' : 'transparent',
+              color: dateRange === r.id ? 'var(--primary)' : 'var(--ink-3)',
+              fontSize: 11,
+              fontFamily: 'var(--font-mono)',
+              cursor: 'pointer',
+              flexShrink: 0,
+            }}
+          >
+            {r.label}
+          </button>
+        ))}
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={() => setSort((s) => {
+            const idx = SORT_CYCLES.indexOf(s);
+            return SORT_CYCLES[(idx + 1) % SORT_CYCLES.length];
+          })}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '4px 10px', borderRadius: 20,
+            border: '1px solid var(--border)',
+            background: sort !== 'newest' ? 'var(--primary-soft)' : 'transparent',
+            color: sort !== 'newest' ? 'var(--primary)' : 'var(--ink-3)',
+            fontSize: 11, fontFamily: 'var(--font-mono)', cursor: 'pointer', flexShrink: 0,
+          }}
+        >
+          {SORT_ICONS[sort]} {SORT_LABELS[sort]}
+        </button>
+      </div>
+
       <div className="filter-row">
         {chips.map((id) => (
           <Chip key={id} active={activeCat === id} onClick={() => setActiveCat(id)}>
@@ -115,72 +188,86 @@ export default function ExpensesScreen() {
         emptySub={query ? 'Try a different search term.' : 'Tap the + button to add one.'}
         emptyIcon="list"
       >
-        {grouped.map((group) => {
-          const isCollapsed = !!collapsedDates[group.date];
-          const dayTotal    = group.items.reduce(
-            (sum, t) => (t.isIncome ? sum : sum + Math.abs(t.amount)), 0
-          );
-          return (
-            <div key={group.date}>
-              <div
-                className="date-sep"
-                onClick={() => toggleDate(group.date)}
-                style={{
-                  cursor: 'pointer',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  userSelect: 'none',
-                }}
-              >
-                <span>{group.label}</span>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{
-                    fontSize: 12,
-                    color: 'var(--ink-2)',
-                    fontVariantNumeric: 'tabular-nums',
-                  }}>
-                    -${dayTotal.toFixed(2)}
-                  </span>
-                  <Icon
-                    name="chevron"
-                    size={13}
-                    style={{
-                      transition: 'transform 200ms ease',
-                      transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-                    }}
-                  />
-                </span>
-              </div>
-              {!isCollapsed && (
-                <div className="txn-list">
-                  {group.items.map((t) => {
-                    const { icon, tone } = catIcon(t.category);
-                    return (
-                      <TxnRow
-                        key={t.id}
-                        txn={{
-                          name:     t.merchant,
-                          meta:     `${catLabel(t.category)}${t.note ? ` · ${t.note}` : ''}`,
-                          amount:   t.amount,
-                          icon,
-                          tone,
-                          isIncome: t.isIncome
-                        }}
-                        onClick={() => setEditing(t)}
-                      />
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {grouped.length === 0 && filtered.length === 0 && query && (
-          <div className="empty-state">
-            <div className="empty-state-title">No matches</div>
-            <div className="empty-state-sub">Try a different search term.</div>
+        {/* Flat list when sorted by highest amount */}
+        {sort === 'highest' ? (
+          <div className="txn-list">
+            {filtered.map((t) => {
+              const { icon, tone } = catIcon(t.category);
+              return (
+                <TxnRow
+                  key={t.id}
+                  txn={{
+                    name:     t.merchant,
+                    meta:     `${catLabel(t.category)} · ${t.date}${t.note ? ` · ${t.note}` : ''}`,
+                    amount:   t.amount,
+                    icon,
+                    tone,
+                    isIncome: t.isIncome
+                  }}
+                  onClick={() => setEditing(t)}
+                />
+              );
+            })}
           </div>
+        ) : (
+          /* Grouped by date for newest/oldest */
+          (grouped || []).map((group) => {
+            const isCollapsed = !!collapsedDates[group.date];
+            const dayTotal    = group.items.reduce(
+              (sum, t) => (t.isIncome ? sum : sum + Math.abs(t.amount)), 0
+            );
+            return (
+              <div key={group.date}>
+                <div
+                  className="date-sep"
+                  onClick={() => toggleDate(group.date)}
+                  style={{
+                    cursor: 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    userSelect: 'none',
+                  }}
+                >
+                  <span>{group.label}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: 'var(--ink-2)', fontVariantNumeric: 'tabular-nums' }}>
+                      -${dayTotal.toFixed(2)}
+                    </span>
+                    <Icon
+                      name="chevron"
+                      size={13}
+                      style={{
+                        transition: 'transform 200ms ease',
+                        transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+                      }}
+                    />
+                  </span>
+                </div>
+                {!isCollapsed && (
+                  <div className="txn-list">
+                    {group.items.map((t) => {
+                      const { icon, tone } = catIcon(t.category);
+                      return (
+                        <TxnRow
+                          key={t.id}
+                          txn={{
+                            name:     t.merchant,
+                            meta:     `${catLabel(t.category)}${t.note ? ` · ${t.note}` : ''}`,
+                            amount:   t.amount,
+                            icon,
+                            tone,
+                            isIncome: t.isIncome
+                          }}
+                          onClick={() => setEditing(t)}
+                        />
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })
         )}
       </AsyncBoundary>
 

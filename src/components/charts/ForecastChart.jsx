@@ -1,169 +1,215 @@
+import { useRef, useEffect, useState } from 'react';
+
 /**
- * ForecastChart — actual (solid) + forecast (dashed) line with uncertainty band.
- * actual:   [{ label, value }]   — historical
- * forecast: [{ label, value }]   — projected, first point should match last actual
- * upper/lower (optional): [{ label, value }] uncertainty bounds for the forecast range
+ * ForecastChart — clean area chart with smooth bezier curves.
+ * actual:   [{ label, value }]  historical months
+ * forecast: [{ label, value }]  projected months (first point = last actual)
+ * upper/lower: optional band arrays (shown as soft fill, not extra lines)
  */
-export default function ForecastChart({
-  actual = [],
-  forecast = [],
-  upper,
-  lower,
-  width = 320,
-  height = 180
-}) {
+export default function ForecastChart({ actual = [], forecast = [], upper, lower }) {
+  const containerRef = useRef(null);
+  const [W, setW]    = useState(320);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (w > 0) setW(w);
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
   if (!actual.length || !forecast.length) return null;
 
-  const chartTop = 0;
-  const chartBottom = 150;
-  const chartHeight = chartBottom - chartTop;
+  const H    = 200;
+  const padL = 46;   // Y labels
+  const padR = 14;
+  const padT = 28;
+  const padB = 28;   // X labels
+  const cW   = W - padL - padR;
+  const cH   = H - padT - padB;
 
-  // Combine to determine scale
-  const allValues = [
+  // Scale
+  const allVals = [
     ...actual.map((d) => d.value),
     ...forecast.map((d) => d.value),
     ...(upper?.map((d) => d.value) || []),
-    ...(lower?.map((d) => d.value) || [])
   ];
-  const max = Math.max(...allValues);
-  const min = Math.min(...allValues);
-  const range = max - min || 1;
+  const maxVal  = Math.max(...allVals, 1) * 1.18;
+  const scaleY  = (v) => padT + cH - (v / maxVal) * cH;
 
-  const scaleY = (v) =>
-    chartBottom - ((v - min) / range) * (chartHeight - 20) - 10;
+  const total  = actual.length + forecast.length - 1;
+  const scaleX = (i) => padL + (i / Math.max(total - 1, 1)) * cW;
 
-  // X positions: actual spans first half, forecast the second
-  const totalPoints = actual.length + forecast.length - 1; // -1 because they share the join point
-  const scaleX = (i) => (i / totalPoints) * width;
+  const joinIdx = actual.length - 1;
+  const aPts    = actual.map((d, i)   => ({ x: scaleX(i),          y: scaleY(d.value), label: d.label,  value: d.value }));
+  const fPts    = forecast.map((d, i) => ({ x: scaleX(joinIdx + i), y: scaleY(d.value), label: d.label,  value: d.value }));
 
-  const actualPts = actual.map((d, i) => ({ x: scaleX(i), y: scaleY(d.value), label: d.label }));
-  const joinIndex = actual.length - 1;
-  const forecastPts = forecast.map((d, i) => ({
-    x: scaleX(joinIndex + i),
-    y: scaleY(d.value),
-    label: d.label
-  }));
+  // Smooth cubic bezier through points
+  function curvePath(pts) {
+    if (pts.length < 2) return `M ${pts[0]?.x ?? 0},${pts[0]?.y ?? 0}`;
+    let d = `M ${pts[0].x},${pts[0].y}`;
+    for (let i = 1; i < pts.length; i++) {
+      const p = pts[i - 1], c = pts[i];
+      const dx = (c.x - p.x) * 0.45;
+      d += ` C ${p.x + dx},${p.y} ${c.x - dx},${c.y} ${c.x},${c.y}`;
+    }
+    return d;
+  }
 
-  const upperPts = upper?.map((d, i) => ({ x: scaleX(joinIndex + i), y: scaleY(d.value) }));
-  const lowerPts = lower?.map((d, i) => ({ x: scaleX(joinIndex + i), y: scaleY(d.value) }));
+  const aPath    = curvePath(aPts);
+  const fPath    = curvePath(fPts);
+  const baseline = padT + cH;
 
-  const pathFrom = (pts) =>
-    pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x},${p.y}`).join(' ');
+  // Area polygons
+  const aArea  = `${aPath} L ${aPts[aPts.length - 1].x},${baseline} L ${aPts[0].x},${baseline} Z`;
+  const fArea  = `${fPath} L ${fPts[fPts.length - 1].x},${baseline} L ${fPts[0].x},${baseline} Z`;
 
-  const actualPath = pathFrom(actualPts);
-  const forecastPath = pathFrom(forecastPts);
+  // Uncertainty band (fill only, no extra lines)
+  let bandArea = null;
+  if (upper && lower && upper.length === forecast.length) {
+    const uPts = upper.map((d, i) => ({ x: scaleX(joinIdx + i), y: scaleY(d.value) }));
+    const lPts = lower.map((d, i) => ({ x: scaleX(joinIdx + i), y: scaleY(d.value) }));
+    const uPath = curvePath(uPts);
+    const lRev  = [...lPts].reverse();
+    const lSeg  = lRev.map((p) => `L ${p.x},${p.y}`).join(' ');
+    bandArea = `${uPath} ${lSeg} Z`;
+  }
 
-  // Area under forecast
-  const lastFp = forecastPts[forecastPts.length - 1];
-  const firstFp = forecastPts[0];
-  const areaD = `${forecastPath} L ${lastFp.x},${height - 30} L ${firstFp.x},${height - 30} Z`;
+  // Y-axis guide values
+  const yGuides = [0.25, 0.5, 0.75];
+  const fmt     = (v) => v >= 1000 ? `$${(v / 1000).toFixed(1)}k` : `$${Math.round(v)}`;
 
-  // X-axis labels: show every other from combined set
-  const allLabels = [...actual.map((d) => d.label), ...forecast.slice(1).map((d) => d.label)];
-  const labelPositions = allLabels.map((label, i) => ({
-    label,
-    x: scaleX(i)
-  }));
-
-  const nowX = forecastPts[0].x;
+  // X labels — actual: every other; forecast: first + last only
+  const nowX  = fPts[0].x;
+  const lastA = aPts[aPts.length - 1];
+  const lastF = fPts[fPts.length - 1];
 
   return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      {/* Gridlines */}
-      <g stroke="var(--border)" strokeWidth="1" strokeDasharray="3 4">
-        <line x1="0" y1="40"  x2={width} y2="40" />
-        <line x1="0" y1="90"  x2={width} y2="90" />
-        <line x1="0" y1="140" x2={width} y2="140" />
-      </g>
+    <div ref={containerRef} style={{ width: '100%' }}>
+      <svg
+        width="100%" height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="xMidYMid meet"
+        style={{ display: 'block', overflow: 'visible' }}
+      >
+        <defs>
+          <linearGradient id="fcActualGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="var(--primary)" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="fcForecastGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="var(--accent)" stopOpacity="0.14" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
+          </linearGradient>
+        </defs>
 
-      {/* NOW divider */}
-      <line x1={nowX} y1="0" x2={nowX} y2={height - 10} stroke="var(--border-strong)" strokeWidth="1" strokeDasharray="2 3" />
-      <text x={nowX} y="12" textAnchor="middle" fill="var(--ink-3)" fontSize="9" fontFamily="JetBrains Mono">
-        NOW
-      </text>
+        {/* Horizontal grid lines */}
+        {yGuides.map((s) => {
+          const y = scaleY(maxVal * s);
+          return (
+            <g key={s}>
+              <line x1={padL} y1={y} x2={W - padR} y2={y}
+                stroke="var(--border)" strokeWidth="1" strokeDasharray="3 5" />
+              <text x={padL - 6} y={y + 3.5}
+                textAnchor="end" fill="var(--ink-3)"
+                fontSize="9" fontFamily="JetBrains Mono">
+                {fmt(maxVal * s)}
+              </text>
+            </g>
+          );
+        })}
 
-      <defs>
-        <linearGradient id="forecastGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.2" />
-          <stop offset="100%" stopColor="var(--accent)" stopOpacity="0" />
-        </linearGradient>
-      </defs>
+        {/* Baseline */}
+        <line x1={padL} y1={baseline} x2={W - padR} y2={baseline}
+          stroke="var(--border)" strokeWidth="1" />
 
-      {/* Forecast area */}
-      <path d={areaD} fill="url(#forecastGrad)" />
+        {/* Uncertainty band fill */}
+        {bandArea && (
+          <path d={bandArea} fill="var(--accent)" fillOpacity="0.06" />
+        )}
 
-      {/* Uncertainty bands */}
-      {upperPts && (
-        <path
-          d={pathFrom(upperPts)}
-          fill="none"
-          stroke="var(--accent)"
-          strokeWidth="1"
-          strokeDasharray="2 3"
-          opacity="0.5"
+        {/* Actual area */}
+        <path d={aArea} fill="url(#fcActualGrad)" />
+
+        {/* Forecast area */}
+        <path d={fArea} fill="url(#fcForecastGrad)" />
+
+        {/* NOW divider */}
+        <line x1={nowX} y1={padT - 6} x2={nowX} y2={baseline}
+          stroke="var(--border-strong)" strokeWidth="1" strokeDasharray="3 3" />
+        <text x={nowX} y={padT - 9}
+          textAnchor="middle" fill="var(--ink-3)"
+          fontSize="8.5" fontFamily="JetBrains Mono" letterSpacing="0.5">
+          TODAY
+        </text>
+
+        {/* Actual line */}
+        <path d={aPath}
+          fill="none" stroke="var(--primary)" strokeWidth="2.5"
+          strokeLinecap="round" strokeLinejoin="round"
+          className="line-draw"
         />
-      )}
-      {lowerPts && (
-        <path
-          d={pathFrom(lowerPts)}
-          fill="none"
-          stroke="var(--accent)"
-          strokeWidth="1"
-          strokeDasharray="2 3"
-          opacity="0.5"
+
+        {/* Forecast dashed line */}
+        <path d={fPath}
+          fill="none" stroke="var(--accent)" strokeWidth="2"
+          strokeLinecap="round" strokeLinejoin="round"
+          strokeDasharray="5 4"
         />
-      )}
 
-      {/* Actual line */}
-      <path
-        d={actualPath}
-        fill="none"
-        stroke="var(--primary)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        className="line-draw"
-      />
+        {/* Actual dots */}
+        <g fill="var(--surface)" stroke="var(--primary)" strokeWidth="2">
+          {aPts.map((p, i) => (
+            <circle key={i} cx={p.x} cy={p.y} r="3" />
+          ))}
+        </g>
 
-      {/* Forecast line */}
-      <path
-        d={forecastPath}
-        fill="none"
-        stroke="var(--accent)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeDasharray="4 4"
-      />
+        {/* Forecast dots — only first and last */}
+        <circle cx={fPts[0].x} cy={fPts[0].y} r="3"
+          fill="var(--surface)" stroke="var(--accent)" strokeWidth="2" />
+        <circle cx={lastF.x} cy={lastF.y} r="5"
+          fill="var(--accent)" stroke="var(--surface)" strokeWidth="2" />
 
-      {/* Actual points */}
-      <g fill="var(--surface)" stroke="var(--primary)" strokeWidth="2">
-        {actualPts.map((p, i) => (
-          <circle key={`a-${i}`} cx={p.x} cy={p.y} r="3" />
-        ))}
-      </g>
+        {/* Value callout on last actual point */}
+        {lastA.value > 0 && (
+          <g>
+            <rect x={lastA.x - 22} y={lastA.y - 22} width={44} height={16}
+              rx="4" fill="var(--primary)" opacity="0.9" />
+            <text x={lastA.x} y={lastA.y - 11}
+              textAnchor="middle" fill="var(--bg)"
+              fontSize="9" fontFamily="JetBrains Mono" fontWeight="700">
+              {fmt(lastA.value)}
+            </text>
+          </g>
+        )}
 
-      {/* Forecast points */}
-      <g fill="var(--surface)" stroke="var(--accent)" strokeWidth="2">
-        {forecastPts.slice(1).map((p, i) => (
-          <circle
-            key={`f-${i}`}
-            cx={p.x}
-            cy={p.y}
-            r={i === forecastPts.length - 2 ? 4 : 3}
-            fill={i === forecastPts.length - 2 ? 'var(--accent)' : 'var(--surface)'}
-          />
-        ))}
-      </g>
-
-      {/* X labels — show every 2nd */}
-      <g fill="var(--ink-3)" fontSize="9" fontFamily="JetBrains Mono" textAnchor="middle">
-        {labelPositions.filter((_, i) => i % 2 === 0).map((p, i) => (
-          <text key={i} x={p.x} y={height - 20}>
-            {p.label.toUpperCase()}
+        {/* Value callout on last forecast point */}
+        <g>
+          <rect x={lastF.x - 24} y={lastF.y - 24} width={48} height={17}
+            rx="4" fill="var(--accent)" opacity="0.9" />
+          <text x={lastF.x} y={lastF.y - 12}
+            textAnchor="middle" fill="var(--bg)"
+            fontSize="9" fontFamily="JetBrains Mono" fontWeight="700">
+            {fmt(lastF.value)}
           </text>
-        ))}
-      </g>
-    </svg>
+        </g>
+
+        {/* X labels */}
+        <g fill="var(--ink-3)" fontSize="9" fontFamily="JetBrains Mono" textAnchor="middle">
+          {/* Actual: first + every-other */}
+          {aPts.filter((_, i) => i === 0 || i % 2 === 0).map((p, i) => (
+            <text key={`a-${i}`} x={p.x} y={H - 6}>{p.label.toUpperCase()}</text>
+          ))}
+          {/* Forecast: every other, skip the join point */}
+          {fPts.slice(1).filter((_, i) => i % 2 === 0).map((p, i) => (
+            <text key={`f-${i}`} x={p.x} y={H - 6} fill="var(--accent)" fillOpacity="0.7">
+              {p.label.toUpperCase()}
+            </text>
+          ))}
+        </g>
+      </svg>
+    </div>
   );
 }

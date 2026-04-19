@@ -4,7 +4,9 @@ import {
   budgetUtilization,
   categoryBreakdown,
   monthlyTrend,
+  budgetTrend,
   categoryComparison,
+  merchantBreakdown,
   forecast,
   insights,
   weeklyPattern
@@ -73,6 +75,28 @@ router.get('/insights', async (req, res, next) => {
   try {
     const month = req.query.month || currentMonth();
     res.json(await insights(month));
+  } catch (e) { next(e); }
+});
+
+router.get('/merchant-breakdown', async (req, res, next) => {
+  try {
+    const category = req.query.category || 'groceries';
+    let { from, to } = req.query;
+    if (!from || !to) {
+      const m = currentMonth();
+      const [y, mm] = m.split('-').map(Number);
+      from = `${m}-01`;
+      to   = `${m}-${String(new Date(y, mm, 0).getDate()).padStart(2, '0')}`;
+    }
+    res.json(await merchantBreakdown(category, from, to));
+  } catch (e) { next(e); }
+});
+
+router.get('/budget-trend', async (req, res, next) => {
+  try {
+    const endMonth = req.query.endMonth || currentMonth();
+    const count = Number(req.query.count) || 6;
+    res.json(await budgetTrend(endMonth, count));
   } catch (e) { next(e); }
 });
 

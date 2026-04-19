@@ -24,9 +24,7 @@ async function ensureDir(dir) {
 async function atomicWrite(filepath, contents) {
   const tmp = `${filepath}.tmp`;
   await fs.writeFile(tmp, contents, 'utf8');
-  await fs.rename(tmp, filepath);
-  await fs.copyFile(tmp, filepath);
-  await fs.unlink(tmp);
+  await fs.rename(tmp, filepath); // atomic; tmp is gone after this
 }
 
 function monthKey(dateStr) {
