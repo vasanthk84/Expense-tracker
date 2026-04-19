@@ -3,7 +3,8 @@
  * - Transactions: month-grouped JSONL (data/transactions/YYYY-MM.jsonl)
  * - Everything else: plain JSON files (data/budgets.json, etc.)
  *
- * Atomic writes: write to .tmp, then rename. Prevents corruption mid-write.
+ * Note: atomic rename removed — fs.rename fails on Windows when target exists (EPERM).
+ * Direct fs.writeFile is safe for local dev; Vercel KV handles production durability.
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -19,12 +20,6 @@ const TXN_DIR = path.join(DATA_DIR, 'transactions');
 
 async function ensureDir(dir) {
   await fs.mkdir(dir, { recursive: true });
-}
-
-async function atomicWrite(filepath, contents) {
-  const tmp = `${filepath}.tmp`;
-  await fs.writeFile(tmp, contents, 'utf8');
-  await fs.rename(tmp, filepath);
 }
 
 function monthKey(dateStr) {
@@ -51,7 +46,7 @@ export async function readJSON(filename, fallback = null) {
 
 export async function writeJSON(filename, data) {
   await ensureDir(DATA_DIR);
-  await atomicWrite(path.join(DATA_DIR, filename), JSON.stringify(data, null, 2));
+  await fs.writeFile(path.join(DATA_DIR, filename), JSON.stringify(data, null, 2), 'utf8');
 }
 
 /* --------- JSONL helpers (transactions) --------- */
@@ -79,7 +74,7 @@ async function writeMonthTxns(month, txns) {
     return (b.createdAt || '').localeCompare(a.createdAt || '');
   });
   const contents = sorted.map((t) => JSON.stringify(t)).join('\n') + (sorted.length ? '\n' : '');
-  await atomicWrite(txnFilePath(month), contents);
+  await fs.writeFile(txnFilePath(month), contents, 'utf8');
 }
 
 /**
