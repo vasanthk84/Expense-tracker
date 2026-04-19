@@ -16,13 +16,12 @@ import {
 import { currentMonth, monthBounds, formatMoney, pad } from '../utils/date.js';
 
 const RANGE_OPTIONS = [
-  { id: 'week',    label: 'Week' },
-  { id: 'month',   label: 'Month' },
+  { id: 'week', label: 'Week' },
+  { id: 'month', label: 'Month' },
   { id: 'quarter', label: 'Quarter' },
-  { id: 'year',    label: 'Year' },
+  { id: 'year', label: 'Year' },
 ];
 
-/** Convert a range id → { from, to, trendCount } */
 function rangeBounds(rangeId) {
   const today = new Date();
   const fmt = (d) =>
@@ -54,7 +53,6 @@ function rangeBounds(rangeId) {
   }
 }
 
-/** Build daily expense bars from raw transactions for the current month */
 function useDailyExpenses(month) {
   const { from, to } = monthBounds(month);
   const txns = useTransactions({ from, to });
@@ -84,11 +82,10 @@ export default function AnalyticsScreen() {
   const { from, to, trendCount } = rangeBounds(range);
 
   const breakdown = useCategoryBreakdown(from, to);
-  const trend     = useTrend(month, trendCount);
+  const trend = useTrend(month, trendCount);
   const comparison = useComparison(month);
-  const daily     = useDailyExpenses(month);
+  const daily = useDailyExpenses(month);
 
-  // Highlight second-to-last point in trend chart
   const highlightIdx = trend.data ? trend.data.length - 2 : null;
 
   return (
@@ -101,7 +98,6 @@ export default function AnalyticsScreen() {
 
       <Segmented options={RANGE_OPTIONS} value={range} onChange={setRange} />
 
-      {/* Donut — spending by category for selected range */}
       <Card variant="chart">
         <div className="chart-head">
           <div className="chart-title">Spending by category</div>
@@ -117,7 +113,6 @@ export default function AnalyticsScreen() {
         </AsyncBoundary>
       </Card>
 
-      {/* Daily expenses for current month */}
       <Card variant="chart">
         <div className="chart-head">
           <div className="chart-title">Daily expenses</div>
@@ -137,7 +132,6 @@ export default function AnalyticsScreen() {
         </AsyncBoundary>
       </Card>
 
-      {/* Monthly trend */}
       <Card variant="chart">
         <div className="chart-head">
           <div className="chart-title">Monthly trend</div>
@@ -158,7 +152,6 @@ export default function AnalyticsScreen() {
         </AsyncBoundary>
       </Card>
 
-      {/* Category comparison — always vs last month */}
       <Card variant="chart">
         <div className="chart-head">
           <div className="chart-title">Category comparison</div>

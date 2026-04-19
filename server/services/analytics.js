@@ -2,9 +2,7 @@
  * analytics.js — server-side aggregations.
  * Pure functions over transactions; called by /api/analytics routes.
  */
-import { readTransactions, readJSON } from './storage.proxy.js';  // ← changed
-
-/* --------- date helpers --------- */
+import { readTransactions, readJSON } from './storage.proxy.js';
 
 function pad(n) { return String(n).padStart(2, '0'); }
 
@@ -37,15 +35,13 @@ function daysRemaining(yyyymm, today = new Date()) {
   return daysInMonth(yyyymm) - today.getDate();
 }
 
-const MONTH_NAMES_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+const MONTH_NAMES_FULL = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 const MONTH_NAMES_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function monthLabel(yyyymm, short = false) {
   const m = Number(yyyymm.slice(5, 7));
   return short ? MONTH_NAMES_SHORT[m - 1] : MONTH_NAMES_FULL[m - 1];
 }
-
-/* --------- aggregations --------- */
 
 function totalSpending(txns) {
   return txns.filter((t) => !t.isIncome).reduce((sum, t) => sum + t.amount, 0);
@@ -60,39 +56,48 @@ function spendingByCategory(txns) {
   return out;
 }
 
-/* --------- public API --------- */
+function averageDailySpent(txns, yyyymm) {
+  const total = totalSpending(txns);
+  const spentDays = Math.max(1, daysInMonth(yyyymm) - daysRemaining(yyyymm));
+  return total / spentDays;
+}
 
 export async function monthSummary(yyyymm) {
   const { from, to } = monthBounds(yyyymm);
   const txns = await readTransactions({ from, to });
-  const settings = await readJSON('settings.json', { monthlyBudget: 0 });
-  const spent = totalSpending(txns);
-  const budget = settings.monthlyBudget || 0;
+  const total = totalSpending(txns);
+  const avgDaily = averageDailySpent(txns, yyyymm);
   return {
     month: yyyymm,
-    monthLabel: monthLabel(yyyymm),
-    spent: Math.round(spent * 100) / 100,
-    budget,
-    remaining: Math.max(0, Math.round((budget - spent) * 100) / 100),
-    daysLeft: daysRemaining(yyyymm),
-    txnCount: txns.length
+    total: Math.round(total * 100) / 100,
+    avgDaily: Math.round(avgDaily * 100) / 100,
+    count: txns.filter((t) => !t.isIncome).length
   };
 }
 
 export async function budgetUtilization(yyyymm) {
   const { from, to } = monthBounds(yyyymm);
-  const txns = await readTransactions({ from, to });
-  const budgets = await readJSON('budgets.json', {});
-  const categories = await readJSON('categories.json', []);
-  const spent = spendingByCategory(txns);
-  return categories
-    .filter((c) => c.id !== 'income')
-    .map((cat) => {
-      const s = Math.round((spent[cat.id] || 0) * 100) / 100;
-      const b = budgets[cat.id] || 0;
-      const pct = b > 0 ? Math.round((s / b) * 100) : 0;
-      return { id: cat.id, name: cat.name, icon: cat.icon, tone: cat.tone, spent: s, budget: b, pct };
-    });
+  const [txns, budgets, categories] = await Promise.all([
+    readTransactions({ from, to }),
+    readJSON('budgets.json', []),
+    readJSON('categories.json', [])
+  ]);
+  const byCat = spendingByCategory(txns);
+  const rows = budgets.map((b) => {
+    const cat = categories.find((c) => c.id === b.categoryId) || { name: b.categoryId };
+    const spent = byCat[b.categoryId] || 0;
+    const remaining = Math.max(0, (b.amount || 0) - spent);
+    const pct = b.amount ? (spent / b.amount) * 100 : 0;
+    return {
+      categoryId: b.categoryId,
+      name: cat.name,
+      budget: b.amount,
+      spent: Math.round(spent * 100) / 100,
+      remaining: Math.round(remaining * 100) / 100,
+      pct: Math.round(pct)
+    };
+  }).sort((a, b) => b.pct - a.pct);
+  return rows;
 }
 
 export async function categoryBreakdown({ from, to }) {
@@ -108,20 +113,20 @@ export async function categoryBreakdown({ from, to }) {
   const top = sorted.slice(0, 4);
   const rest = sorted.slice(4);
   const restTotal = rest.reduce((s, c) => s + c.value, 0);
- const slices = [
-  ...top.map((c, i) => ({
-    label: c.name,
-    value: Math.round(c.value * 100) / 100,        // ← dollars ✓
-    color: colors[i] || colors[colors.length - 1]
-  }))
-];
-if (restTotal > 0) {
-  slices.push({
-    label: 'Other',
-    value: Math.round(restTotal * 100) / 100,      // ← dollars ✓
-    color: colors[4]
-  });
-}
+  const slices = [
+    ...top.map((c, i) => ({
+      label: c.name,
+      value: Math.round(c.value * 100) / 100,
+      color: colors[i] || colors[colors.length - 1]
+    }))
+  ];
+  if (restTotal > 0) {
+    slices.push({
+      label: 'Other',
+      value: Math.round(restTotal * 100) / 100,
+      color: colors[4]
+    });
+  }
   return { total: Math.round(total * 100) / 100, slices };
 }
 
@@ -157,123 +162,57 @@ export async function categoryComparison(yyyymm) {
     }))
     .sort((a, b) => b.current - a.current)
     .slice(0, 5);
-  return top.map((c) => ({
-    label: c.name.slice(0, 4).toLowerCase(),
-    fullLabel: c.name,
-    current: c.current,
-    previous: c.previous,
-    tone: c.tone === 'accent' ? 'accent' : undefined
-  }));
+  return top;
 }
 
-export async function forecast(endMonth, pastMonths = 6, futureMonths = 6) {
-  const trend = await monthlyTrend(endMonth, pastMonths);
-  const values = trend.map((d) => d.value).filter((v) => v > 0);
-  if (!values.length) return { actual: trend, forecast: [], upper: [], lower: [], projected: 0, yoyChange: 0 };
-  const avg = values.reduce((s, v) => s + v, 0) / values.length;
-  const n = values.length;
-  const xs = values.map((_, i) => i);
-  const meanX = xs.reduce((s, v) => s + v, 0) / n;
-  let num = 0, den = 0;
-  for (let i = 0; i < n; i++) {
-    num += (xs[i] - meanX) * (values[i] - avg);
-    den += (xs[i] - meanX) ** 2;
-  }
-  const slope = den === 0 ? 0 : num / den;
-  const lastValue = values[values.length - 1];
-  const forecastPoints = [{ month: endMonth, label: monthLabel(endMonth, true), value: lastValue }];
-  for (let i = 1; i <= futureMonths; i++) {
+export async function forecast(endMonth, past = 6, future = 6) {
+  const history = await monthlyTrend(endMonth, past);
+  const avg = history.reduce((s, d) => s + d.value, 0) / (history.length || 1);
+  const data = [...history.map((d) => ({ ...d, projected: false }))];
+  for (let i = 1; i <= future; i++) {
     const m = offsetMonth(endMonth, i);
-    const projected = Math.max(0, Math.round((avg + slope * (n - 1 + i)) * 100) / 100);
-    forecastPoints.push({ month: m, label: monthLabel(m, true), value: projected });
+    data.push({ month: m, label: monthLabel(m, true), value: Math.round(avg * 100) / 100, projected: true });
   }
-  const upper = forecastPoints.map((p) => ({ ...p, value: Math.round(p.value * 1.1 * 100) / 100 }));
-  const lower = forecastPoints.map((p) => ({ ...p, value: Math.round(p.value * 0.9 * 100) / 100 }));
-  const projected = forecastPoints.slice(1).reduce((s, p) => s + p.value, 0);
-  const yoyChange = Math.round(((slope * futureMonths) / avg) * 100 * 10) / 10;
-  return {
-    actual: trend, forecast: forecastPoints, upper, lower,
-    projected: Math.round(projected), yoyChange,
-    period: `${monthLabel(forecastPoints[1].month, true)} → ${monthLabel(forecastPoints[forecastPoints.length - 1].month, true)}`
-  };
+  return data;
 }
 
 export async function insights(yyyymm) {
   const { from, to } = monthBounds(yyyymm);
-  const prev = monthBounds(offsetMonth(yyyymm, -1));
-  const [curTxns, prevTxns, categories, budgets] = await Promise.all([
+  const [txns, budgets, categories] = await Promise.all([
     readTransactions({ from, to }),
-    readTransactions(prev),
-    readJSON('categories.json', []),
-    readJSON('budgets.json', {})
+    readJSON('budgets.json', []),
+    readJSON('categories.json', [])
   ]);
-  const out = [];
-  const curBy = spendingByCategory(curTxns);
-  const prevBy = spendingByCategory(prevTxns);
+  const byCat = spendingByCategory(txns);
+  const topCat = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0];
+  const topBudgetOver = budgets
+    .map((b) => ({ ...b, spent: byCat[b.categoryId] || 0 }))
+    .filter((b) => b.amount > 0)
+    .sort((a, b) => (b.spent / b.amount) - (a.spent / a.amount))[0];
 
-  for (const cat of categories) {
-    if (cat.id === 'income') continue;
-    const cur = curBy[cat.id] || 0;
-    const prev = prevBy[cat.id] || 0;
-    if (prev > 50 && cur > prev * 1.15) {
-      const pct = Math.round(((cur - prev) / prev) * 100);
-      out.push({ type: 'spike', icon: 'spark', title: `${cat.name} up sharply`, body: `You spent ${pct}% more on ${cat.name.toLowerCase()} than last month.`, highlight: `${pct}% more`, category: cat.id });
-      break;
-    }
-  }
-
-  const overs = [];
-  for (const cat of categories) {
-    if (cat.id === 'income') continue;
-    const spent = curBy[cat.id] || 0;
-    const budget = budgets[cat.id] || 0;
-    if (budget > 0 && spent > budget) overs.push({ category: cat.name, over: Math.round((spent - budget) * 100) / 100 });
-  }
-  if (overs.length) {
-    const top = overs.sort((a, b) => b.over - a.over)[0];
-    out.push({ type: 'over-budget', icon: 'alert', title: `Over budget on ${top.category}`, body: `You're $${top.over.toFixed(2)} over your ${top.category.toLowerCase()} budget this month.`, highlight: `$${top.over.toFixed(2)}`, category: top.category.toLowerCase() });
-  }
-
-  const dayTotals = [0,0,0,0,0,0,0];
-  const dayCounts = [0,0,0,0,0,0,0];
-  for (const t of curTxns) {
-    if (t.isIncome) continue;
-    const dow = new Date(t.date).getDay();
-    dayTotals[dow] += t.amount;
-    dayCounts[dow]++;
-  }
-  const dayAvgs = dayTotals.map((total, i) => dayCounts[i] ? total / dayCounts[i] : 0);
-  let topDay = 0;
-  for (let i = 1; i < 7; i++) if (dayAvgs[i] > dayAvgs[topDay]) topDay = i;
-  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  if (dayAvgs[topDay] > 0) {
-    out.push({ type: 'pattern', icon: 'spark', title: 'Spending pattern detected', body: `${dayNames[topDay]} is your highest-spend day, averaging $${Math.round(dayAvgs[topDay])}.`, highlight: `${dayNames[topDay]}`, pattern: { dayTotals, dayNames, topDay } });
-  }
-  return out;
+  return {
+    topCategory: topCat ? {
+      id: topCat[0],
+      name: (categories.find((c) => c.id === topCat[0]) || {}).name || topCat[0],
+      amount: Math.round(topCat[1] * 100) / 100
+    } : null,
+    mostUtilizedBudget: topBudgetOver ? {
+      categoryId: topBudgetOver.categoryId,
+      name: (categories.find((c) => c.id === topBudgetOver.categoryId) || {}).name || topBudgetOver.categoryId,
+      pct: Math.round((topBudgetOver.spent / topBudgetOver.amount) * 100),
+      spent: Math.round(topBudgetOver.spent * 100) / 100,
+      budget: Math.round(topBudgetOver.amount * 100) / 100
+    } : null
+  };
 }
 
 export async function weeklyPattern(yyyymm) {
   const { from, to } = monthBounds(yyyymm);
   const txns = await readTransactions({ from, to });
-  const dayTotals = [0,0,0,0,0,0,0];
-  for (const t of txns) {
-    if (t.isIncome) continue;
-    const dow = new Date(t.date).getDay();
-    dayTotals[dow] += t.amount;
-  }
-  const max = Math.max(...dayTotals, 1);
-  const order = [1,2,3,4,5,6,0];
-  const labels = ['M','T','W','T','F','S','S'];
-  const totals = order.map((i) => dayTotals[i]);
-  const topIdx = totals.indexOf(Math.max(...totals));
-  return {
-    days: order.map((i, idx) => ({
-      day: labels[idx],
-      value: Math.round((dayTotals[i] / max) * 100),
-      amount: Math.round(dayTotals[i] * 100) / 100,
-      highlight: idx === topIdx
-    })),
-    topDay: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][topIdx],
-    topAvg: Math.round(totals[topIdx] / 4)
-  };
+  const labels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const sums = Array(7).fill(0);
+  txns.filter((t) => !t.isIncome).forEach((t) => {
+    sums[new Date(t.date).getDay()] += t.amount;
+  });
+  return labels.map((label, i) => ({ label, value: Math.round(sums[i] * 100) / 100 }));
 }

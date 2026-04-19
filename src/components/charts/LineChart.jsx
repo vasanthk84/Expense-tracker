@@ -1,7 +1,3 @@
-/**
- * LineChart — monthly trend.
- * Fixes: smooth curves, proper preserveAspectRatio, interactive tooltip, label thinning.
- */
 import { useRef, useState, useCallback } from 'react';
 
 function smoothPath(points) {
@@ -31,7 +27,7 @@ export default function LineChart({
 
   if (!data.length) return null;
 
-  const padBottom = 30;
+  const padBottom = 32;
   const chartBottom = height - padBottom;
   const chartHeight = chartBottom;
 
@@ -52,11 +48,9 @@ export default function LineChart({
   const pathD = smoothPath(points);
   const areaD = `${pathD} L${width},${height - padBottom} L0,${height - padBottom} Z`;
 
-  // Active index: hover/touch overrides highlightIndex
   const activeIdx = hoverIdx ?? highlightIndex;
   const hi = activeIdx != null ? points[activeIdx] : null;
 
-  // Hit-area handler: find nearest point by x position
   const handlePointer = useCallback((clientX) => {
     if (!svgRef.current) return;
     const rect = svgRef.current.getBoundingClientRect();
@@ -70,7 +64,6 @@ export default function LineChart({
     setHoverIdx(nearest);
   }, [points, width]);
 
-  // Label thinning: show every Nth label to avoid overlap
   const labelStep = data.length > 10 ? 3 : data.length > 6 ? 2 : 1;
 
   return (
@@ -86,7 +79,6 @@ export default function LineChart({
       onTouchMove={(e) => { e.preventDefault(); handlePointer(e.touches[0].clientX); }}
       onTouchEnd={() => setHoverIdx(null)}
     >
-      {/* Gridlines */}
       <g stroke="var(--border)" strokeWidth="1" strokeDasharray="3 4">
         <line x1="0" y1={chartHeight * 0.25} x2={width} y2={chartHeight * 0.25} />
         <line x1="0" y1={chartHeight * 0.5}  x2={width} y2={chartHeight * 0.5} />
@@ -95,7 +87,7 @@ export default function LineChart({
 
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%"   stopColor="var(--primary)" stopOpacity="0.18" />
+          <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.18" />
           <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
         </linearGradient>
       </defs>
@@ -111,7 +103,6 @@ export default function LineChart({
         className="line-draw"
       />
 
-      {/* Points */}
       <g fill="var(--surface)" stroke="var(--primary)" strokeWidth="2">
         {points.map((p, i) => (
           <circle
@@ -125,17 +116,17 @@ export default function LineChart({
         ))}
       </g>
 
-      {/* Tooltip — follows hover/touch */}
       {hi && (
         <g>
           <line
-            x1={hi.x} y1={0}
-            x2={hi.x} y2={height - padBottom}
+            x1={hi.x}
+            y1={0}
+            x2={hi.x}
+            y2={height - padBottom}
             stroke="var(--border-strong)"
             strokeWidth="1"
             strokeDasharray="2 3"
           />
-          {/* Clamp tooltip box to stay within SVG bounds */}
           <rect
             x={Math.min(Math.max(hi.x - 38, 0), width - 76)}
             y={20}
@@ -168,14 +159,16 @@ export default function LineChart({
         </g>
       )}
 
-      {/* X labels — thinned to prevent overlap */}
-      <g fill="var(--ink-3)" fontSize="9" fontFamily="JetBrains Mono" textAnchor="middle">
+      <line x1="0" y1={height - padBottom} x2={width} y2={height - padBottom} stroke="var(--border)" strokeWidth="1" />
+
+      <g fill="var(--ink-2)" fontSize="9.5" fontFamily="JetBrains Mono" textAnchor="middle" letterSpacing="0.3">
         {points.map((p, i) => {
           if (i % labelStep !== 0 && i !== points.length - 1) return null;
           return (
-            <text key={i} x={p.x} y={height - 8}>
-              {p.label.toUpperCase()}
-            </text>
+            <g key={i}>
+              <line x1={p.x} y1={height - padBottom} x2={p.x} y2={height - padBottom + 4} stroke="var(--border)" strokeWidth="1" />
+              <text x={p.x} y={height - 6}>{p.label.toUpperCase()}</text>
+            </g>
           );
         })}
       </g>
