@@ -73,9 +73,15 @@ async function bootstrap() {
   }
 }
 
-bootstrap().then(() => {
-  app.listen(PORT, () => {
-    console.log(`\n🟢 Ledger API listening on http://localhost:${PORT}`);
-    console.log(`   Data dir: ${DATA_DIR}\n`);
+if (process.env.VERCEL) {
+  // On Vercel, just export the app (Vercel will handle the server)
+  export default app;
+} else {
+  // Local development: run bootstrap and start server
+  bootstrap().then(() => {
+    app.listen(PORT, () => {
+      console.log(`\n🟢 Ledger API listening on http://localhost:${PORT}`);
+      console.log(`   Data dir: ${DATA_DIR}\n`);
+    });
   });
-});
+}
