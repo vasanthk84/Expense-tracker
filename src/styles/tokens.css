@@ -1,0 +1,70 @@
+/* ============================================
+   DESIGN TOKENS — single source of truth
+   Color system: 4 colors total
+   - Primary:  Deep Forest (muted green)
+   - Neutrals: Warm stone grays
+   - Accent:   Ochre (highlights only)
+   - Danger:   Muted clay (over-budget only)
+============================================ */
+:root {
+  /* Light mode — warm cream */
+  --bg:            #F5F3EE;
+  --surface:       #FDFBF7;
+  --surface-2:     #EEEAE1;
+  --border:        #E2DDD1;
+  --border-strong: #CFC8B8;
+
+  --ink:    #1B2A24;
+  --ink-2:  #4A5852;
+  --ink-3:  #8A908A;
+
+  --primary:      #2C4A3E;
+  --primary-soft: #E4EBE5;
+  --primary-ink:  #FDFBF7;
+
+  --accent:      #B8894A;
+  --accent-soft: #F1E6D2;
+
+  --danger:      #8B3A2F;
+  --danger-soft: #F0DCD5;
+
+  --shadow-sm: 0 1px 2px rgba(27, 42, 36, 0.04);
+  --shadow-md: 0 4px 16px -4px rgba(27, 42, 36, 0.08),
+               0 2px 4px rgba(27, 42, 36, 0.04);
+  --shadow-lg: 0 12px 40px -12px rgba(27, 42, 36, 0.18);
+
+  --radius-sm: 8px;
+  --radius:    14px;
+  --radius-lg: 20px;
+
+  --font-display: 'Fraunces', serif;
+  --font-body:    'Inter', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+}
+
+[data-theme='dark'] {
+  --bg:            #0F1411;
+  --surface:       #171D1A;
+  --surface-2:     #1E2622;
+  --border:        #242C27;
+  --border-strong: #2F3832;
+
+  --ink:    #EDE9DE;
+  --ink-2:  #A8B0A9;
+  --ink-3:  #6E7570;
+
+  --primary:      #7FA894;
+  --primary-soft: #1F2A24;
+  --primary-ink:  #0F1411;
+
+  --accent:      #D4A369;
+  --accent-soft: #2A2218;
+
+  --danger:      #C57665;
+  --danger-soft: #2A1C18;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px -4px rgba(0, 0, 0, 0.4),
+               0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 12px 40px -12px rgba(0, 0, 0, 0.6);
+}

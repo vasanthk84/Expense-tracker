@@ -1,0 +1,303 @@
+/* ============================================
+   APP SHELL — real responsive layout
+   Replaces the phone-frame showroom from prototype
+============================================ */
+
+.app {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+/* Mobile-first: full-bleed screen with bottom nav */
+.app-content {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding-bottom: 90px;
+  position: relative;
+  background: var(--bg);
+  box-shadow: var(--shadow-md);
+}
+
+/* Mobile-only top status simulation strip removed; use real browser */
+
+/* The bottom nav becomes truly fixed in the real app */
+.app .bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 480px;
+}
+
+/* The FAB sticks above the nav */
+.app .fab {
+  position: fixed;
+  bottom: 96px;
+  right: max(20px, calc(50% - 240px + 20px));
+  z-index: 25;
+}
+
+/* Modal fills the mobile column */
+.app .modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+}
+
+/* Loading state */
+.loading-pane {
+  padding: 80px 20px;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+.loading-spinner {
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--surface-2);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  margin: 0 auto 12px;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.error-pane {
+  margin: 20px;
+  padding: 20px;
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+.error-pane strong { display: block; margin-bottom: 4px; font-family: var(--font-display); }
+
+/* Empty state */
+.empty-state {
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--ink-3);
+}
+.empty-state-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 16px;
+  color: var(--ink-3);
+}
+.empty-state-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.empty-state-sub {
+  font-size: 12.5px;
+  max-width: 260px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* Demo banner */
+.demo-banner {
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 10px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.demo-banner-text { font-weight: 500; }
+.demo-banner button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 5px 11px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-body);
+  white-space: nowrap;
+}
+.demo-banner button:hover { opacity: 0.9; }
+
+/* Settings list */
+.settings-list { padding: 0; }
+.settings-row {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.settings-row:first-child { border-top: none; }
+.settings-row-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink);
+}
+.settings-row-sub {
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-top: 2px;
+}
+.settings-row-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.danger-zone {
+  margin: 16px 20px;
+  padding: 18px;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+}
+.danger-zone-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--danger);
+  margin-bottom: 6px;
+}
+.danger-zone-desc {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+.danger-zone-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.btn-danger {
+  padding: 8px 14px;
+  background: var(--danger);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-body);
+  cursor: pointer;
+}
+.btn-danger:hover { opacity: 0.9; }
+
+/* Reset confirmation modal differs slightly */
+.confirm-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--danger-soft);
+  color: var(--danger);
+  display: grid;
+  place-items: center;
+  margin: 0 auto 14px;
+}
+.confirm-text {
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-2);
+  margin-bottom: 18px;
+  padding: 0 8px;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 110px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--bg);
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  z-index: 200;
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: toastIn 0.3s ease;
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translate(-50%, 20px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* Theme toggle in app header */
+.icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.icon-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+/* ============================================
+   DESKTOP LAYOUT (>= 900px)
+   Sidebar + main, hide bottom nav
+============================================ */
+@media (min-width: 900px) {
+  .app-content {
+    max-width: 100%;
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    box-shadow: none;
+    padding-bottom: 0;
+  }
+
+  .app .bottom-nav { display: none; }
+
+  .app .fab {
+    right: 32px;
+    bottom: 32px;
+  }
+
+  .desktop-sidebar {
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    padding: 28px 16px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+
+  .desktop-main {
+    padding: 0;
+    max-width: 760px;
+    width: 100%;
+    margin: 0 auto;
+  }
+}
+
+@media (max-width: 899px) {
+  .desktop-sidebar { display: none; }
+}
