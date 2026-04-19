@@ -20,8 +20,15 @@ export default function ReportsScreen() {
   const toast = useToast();
 
   const handleExport = (report) => {
-    // UI placeholder — wire to real export later
-    toast.show(`Export queued: ${report.title}`, { icon: 'download' });
+    const base = import.meta.env.VITE_API_BASE || '';
+    const url = `${base}/api/reports/export?id=${encodeURIComponent(report.id)}&type=${range}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast.show(`Downloading ${report.title}…`, { icon: 'download' });
   };
 
   return (

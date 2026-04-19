@@ -1,3 +1,11 @@
+/**
+ * DashboardScreen.jsx
+ *
+ * FIXES:
+ *  1. HeroCard now shows income + net cash flow (surplus/deficit) alongside spend
+ *  2. Savings rate shown in hero
+ *  3. bp-vals raw number bug fixed — amounts now properly formatted with $
+ */
 import { useNavigate } from 'react-router-dom';
 import AppHeader from '../components/layout/AppHeader.jsx';
 import Card from '../components/ui/Card.jsx';
@@ -20,15 +28,15 @@ import Icon from '../components/icons/Icon.jsx';
 
 export default function DashboardScreen() {
   const navigate = useNavigate();
-  const month = currentMonth();
+  const month    = currentMonth();
   const { theme, toggleTheme } = useTheme();
-  const settings = useSettings();
-  const summary = useMonthSummary(month);
+  const settings    = useSettings();
+  const summary     = useMonthSummary(month);
   const utilization = useBudgetUtilization(month);
-  const goals = useSavingsGoals();
-  const insights = useInsights(month);
+  const goals       = useSavingsGoals();
+  const insights    = useInsights(month);
 
-  const userName = settings.data?.user?.name || 'there';
+  const userName    = settings.data?.user?.name    || 'there';
   const userInitial = settings.data?.user?.initial || userName[0]?.toUpperCase() || 'U';
 
   return (
@@ -46,7 +54,7 @@ export default function DashboardScreen() {
         }
       />
 
-      {/* Hero spending card */}
+      {/* Hero spending card — now includes income + net flow */}
       <AsyncBoundary state={summary} loadingLabel="Loading summary…">
         {summary.data && <HeroCard summary={summary.data} />}
       </AsyncBoundary>
@@ -58,7 +66,12 @@ export default function DashboardScreen() {
 
       {/* Budget vs actual */}
       <SectionHead title="Budget vs. Actual" action="See all →" onActionClick={() => navigate('/budgets')} />
-      <AsyncBoundary state={utilization} emptyTitle="No budgets yet" emptySub="Set category budgets to start tracking." emptyIcon="savings">
+      <AsyncBoundary
+        state={utilization}
+        emptyTitle="No budgets yet"
+        emptySub="Set category budgets to start tracking."
+        emptyIcon="savings"
+      >
         {utilization.data && (
           <Card>
             {utilization.data.filter((b) => b.budget > 0).slice(0, 4).map((b) => (
@@ -67,7 +80,10 @@ export default function DashboardScreen() {
                   <CategoryIcon icon={b.icon} tone={b.tone} />
                   <div className="budget-meta">
                     <div className="budget-name">{b.name}</div>
-                    <div className="budget-sub">${b.spent} / ${b.budget}</div>
+                    {/* FIX: was `${b.spent}` — now properly formatted */}
+                    <div className="budget-sub">
+                      {formatMoney(b.spent, { withCents: false })} / {formatMoney(b.budget, { withCents: false })}
+                    </div>
                   </div>
                 </div>
                 <div className="budget-bar-wrap">
@@ -82,7 +98,12 @@ export default function DashboardScreen() {
 
       {/* Insights */}
       <SectionHead title="Key insights" />
-      <AsyncBoundary state={insights} emptyTitle="No insights yet" emptySub="Add a few transactions and we'll spot patterns." emptyIcon="spark">
+      <AsyncBoundary
+        state={insights}
+        emptyTitle="No insights yet"
+        emptySub="Add a few transactions and we'll spot patterns."
+        emptyIcon="spark"
+      >
         {insights.data?.length > 0 && (
           <Card>
             {insights.data.slice(0, 3).map((ins, i) => (
@@ -99,9 +120,15 @@ export default function DashboardScreen() {
   );
 }
 
+/**
+ * FIX: HeroCard now shows spend, income, net cash flow, and savings rate.
+ * Previously only showed spend/budget/remaining/daysLeft — income was invisible.
+ */
 function HeroCard({ summary }) {
   const cents = (summary.spent % 1).toFixed(2).slice(2);
   const whole = Math.floor(summary.spent);
+  const isPositive = summary.netFlow >= 0;
+
   return (
     <Card variant="hero">
       <div className="hero-label">Spending · {summary.monthLabel}</div>
@@ -109,6 +136,8 @@ function HeroCard({ summary }) {
         ${whole.toLocaleString()}
         <span className="cents">.{cents}</span>
       </div>
+
+      {/* Primary row: budget / remaining / days */}
       <div className="hero-sub">
         <div className="hero-sub-item">
           <div className="hero-sub-label">Budget</div>
@@ -123,6 +152,42 @@ function HeroCard({ summary }) {
           <div className="hero-sub-value">{summary.daysLeft}</div>
         </div>
       </div>
+
+      {/* Secondary row: income / net flow / savings rate — only if income exists */}
+      {summary.income > 0 && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          marginTop: 12,
+          paddingTop: 12,
+          borderTop: '1px solid rgba(253, 251, 247, 0.12)',
+          position: 'relative',
+          zIndex: 1
+        }}>
+          <div className="hero-sub-item">
+            <div className="hero-sub-label">Income</div>
+            <div className="hero-sub-value" style={{ color: 'rgba(253,251,247,0.9)' }}>
+              ${summary.income.toLocaleString()}
+            </div>
+          </div>
+          <div className="hero-sub-item">
+            <div className="hero-sub-label">Net flow</div>
+            <div className="hero-sub-value" style={{
+              color: isPositive ? '#A8D5B5' : '#F4A89A'
+            }}>
+              {isPositive ? '+' : '−'}${Math.abs(summary.netFlow).toLocaleString()}
+            </div>
+          </div>
+          <div className="hero-sub-item">
+            <div className="hero-sub-label">Saved</div>
+            <div className="hero-sub-value" style={{
+              color: summary.savingsRate > 0 ? '#A8D5B5' : '#F4A89A'
+            }}>
+              {summary.savingsRate}%
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   );
 }
@@ -146,7 +211,6 @@ function SavingsCard({ goal }) {
   );
 }
 
-/** Replace the highlight phrase in body with an <em> for visual emphasis. */
 function renderHighlight(body, highlight) {
   if (!highlight || !body.includes(highlight)) return body;
   const parts = body.split(highlight);

@@ -40,10 +40,10 @@ router.post('/migrate', async (req, res, next) => {
   try {
     // Read everything from local FS
     const [categories, budgets, savingsGoals, settings] = await Promise.all([
-      fsStorage.readJSON('categories.json',    []),
-      fsStorage.readJSON('budgets.json',       {}),
+      fsStorage.readJSON('categories.json', []),
+      fsStorage.readJSON('budgets.json', {}),
       fsStorage.readJSON('savings-goals.json', []),
-      fsStorage.readJSON('settings.json',      {})
+      fsStorage.readJSON('settings.json', {})
     ]);
 
     const months = await fsStorage.listTxnMonths();
@@ -51,20 +51,26 @@ router.post('/migrate', async (req, res, next) => {
     for (const m of months) {
       const txns = await fsStorage.readTransactions({
         from: `${m}-01`,
-        to:   `${m}-31`  // storage filters to actual month bounds
+        to: `${m}-31`  // storage filters to actual month bounds
       });
       allTxns.push(...txns);
     }
 
     // Wipe KV and re-write
     await kvStorage.clearAllData();
-    await kvStorage.writeJSON('categories.json',    categories);
-    await kvStorage.writeJSON('budgets.json',       budgets);
+    await kvStorage.writeJSON('categories.json', categories);
+    await kvStorage.writeJSON('budgets.json', budgets);
     await kvStorage.writeJSON('savings-goals.json', savingsGoals);
-    await kvStorage.writeJSON('settings.json',      settings);
+    await kvStorage.writeJSON('settings.json', settings);
 
+    const byMonth = {};
     for (const txn of allTxns) {
-      await kvStorage.appendTransaction(txn);
+      const m = txn.date.slice(0, 7);
+      if (!byMonth[m]) byMonth[m] = [];
+      byMonth[m].push(txn);
+    }
+    for (const [month, txns] of Object.entries(byMonth)) {
+      await kvStorage.batchWriteMonth(month, txns);
     }
 
     res.json({

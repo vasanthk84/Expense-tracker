@@ -1,6 +1,7 @@
 /**
  * server/index.js — Express app entry
  */
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import path from 'node:path';
@@ -27,6 +28,7 @@ const app = express();
 // Allow requests from the deployed frontend AND local dev
 const ALLOWED_ORIGINS = [
   'https://expense-tracker-813p.vercel.app',
+  'https://expense-tracker-beta-gold-66.vercel.app',
   'http://localhost:5173',
   'http://localhost:4173'
 ];

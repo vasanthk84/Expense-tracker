@@ -1,34 +1,52 @@
 /**
  * storage.kv.js — Upstash Redis adapter (via Vercel marketplace).
  *
+ * FIX: readJSON was relying on Upstash auto-parsing which is inconsistent.
+ * The @upstash/redis client sometimes returns a parsed object, sometimes a
+ * raw string, depending on client version and whether the value was stored
+ * via JSON.stringify or not.  We now normalise everything explicitly:
+ *   - writeJSON always stores JSON.stringify(data)
+ *   - readJSON always calls safeParseJSON() which handles both string and object
+ *
  * Works with both old Vercel KV env vars and new Upstash env vars:
- *   Upstash injects: KV_REST_API_URL + KV_REST_API_TOKEN
- *                or: UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
+ *   KV_REST_API_URL + KV_REST_API_TOKEN
+ *   UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN
  */
 import { Redis } from '@upstash/redis';
 
-// @upstash/redis auto-reads these env var pairs (tries both naming conventions):
-//   KV_REST_API_URL / KV_REST_API_TOKEN          (old Vercel KV names)
-//   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN  (new Upstash names)
 const redis = new Redis({
   url:   process.env.KV_REST_API_URL   || process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
 /* ─────────────────────────────────────────
-   JSON helpers
+   Safe JSON helpers
 ───────────────────────────────────────── */
+
+/**
+ * FIX: Upstash may return an already-parsed object OR a JSON string.
+ * Handle both cases so callers always receive the correct type.
+ */
+function safeParseJSON(val, fallback = null) {
+  if (val === null || val === undefined) return fallback;
+  if (typeof val === 'string') {
+    try { return JSON.parse(val); } catch { return fallback; }
+  }
+  // Already an object/array (Upstash auto-parsed it)
+  return val;
+}
 
 export async function readJSON(filename, fallback = null) {
   try {
     const val = await redis.get(`config:${filename}`);
-    return val === null || val === undefined ? fallback : val;
+    return safeParseJSON(val, fallback);
   } catch {
     return fallback;
   }
 }
 
 export async function writeJSON(filename, data) {
+  // Always store as a JSON string so reads are always consistent
   await redis.set(`config:${filename}`, JSON.stringify(data));
 }
 
@@ -38,8 +56,7 @@ export async function writeJSON(filename, data) {
 
 async function getMonthIndex() {
   const idx = await redis.get('txn:index');
-  if (!idx) return [];
-  return typeof idx === 'string' ? JSON.parse(idx) : idx;
+  return safeParseJSON(idx, []);
 }
 
 async function addMonthToIndex(month) {
@@ -53,8 +70,7 @@ async function addMonthToIndex(month) {
 
 async function readMonthTxns(month) {
   const rows = await redis.get(`txn:${month}`);
-  if (!rows) return [];
-  return typeof rows === 'string' ? JSON.parse(rows) : rows;
+  return safeParseJSON(rows, []);
 }
 
 async function writeMonthTxns(month, txns) {
@@ -77,14 +93,14 @@ export async function listTxnMonths() {
 }
 
 export async function appendTransaction(txn) {
-  const month = monthKey(txn.date);
+  const month    = monthKey(txn.date);
   const existing = await readMonthTxns(month);
   existing.push(txn);
   await writeMonthTxns(month, existing);
 }
 
 export async function readTransactions({ from, to } = {}) {
-  const months = await listTxnMonths();
+  const months    = await listTxnMonths();
   const fromMonth = from ? monthKey(from) : null;
   const toMonth   = to   ? monthKey(to)   : null;
 
@@ -109,13 +125,13 @@ export async function readTransactions({ from, to } = {}) {
 
 export async function findTransaction(id, hintMonth) {
   if (hintMonth) {
-    const txns = await readMonthTxns(hintMonth);
+    const txns  = await readMonthTxns(hintMonth);
     const found = txns.find((t) => t.id === id);
     if (found) return { txn: found, month: hintMonth };
   }
   const months = await listTxnMonths();
   for (const m of months) {
-    const txns = await readMonthTxns(m);
+    const txns  = await readMonthTxns(m);
     const found = txns.find((t) => t.id === id);
     if (found) return { txn: found, month: m };
   }
@@ -126,9 +142,9 @@ export async function updateTransaction(id, patch) {
   const result = await findTransaction(id);
   if (!result) return null;
   const { txn: existing, month: oldMonth } = result;
-  const updated = { ...existing, ...patch, id: existing.id, updatedAt: new Date().toISOString() };
+  const updated  = { ...existing, ...patch, id: existing.id, updatedAt: new Date().toISOString() };
   const newMonth = monthKey(updated.date);
-  const oldTxns = await readMonthTxns(oldMonth);
+  const oldTxns  = await readMonthTxns(oldMonth);
   const filtered = oldTxns.filter((t) => t.id !== id);
   if (newMonth === oldMonth) {
     await writeMonthTxns(oldMonth, [...filtered, updated]);
@@ -165,4 +181,13 @@ export async function clearAllData() {
   const months = await getMonthIndex();
   for (const m of months) await redis.del(`txn:${m}`);
   await redis.del('txn:index');
+}
+
+export async function batchWriteMonth(month, txns) {
+  const sorted = [...txns].sort((a, b) => {
+    if (a.date !== b.date) return b.date.localeCompare(a.date);
+    return (b.createdAt || '').localeCompare(a.createdAt || '');
+  });
+  await redis.set(`txn:${month}`, JSON.stringify(sorted));
+  await addMonthToIndex(month);
 }

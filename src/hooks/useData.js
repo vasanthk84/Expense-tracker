@@ -68,6 +68,11 @@ export function useBudgetMutations() {
   return { setCategory, setAll };
 }
 
+export function useSettingsMutations() {
+  const update = useCallback(async (patch) => { const r = await settingsApi.update(patch); bus.emit(EVENTS.SETTINGS_CHANGED); return r; }, []);
+  return { update };
+}
+
 export function useAdminMutations() {
   const reset = useCallback(async (mode) => {
     const result = await adminApi.reset(mode);

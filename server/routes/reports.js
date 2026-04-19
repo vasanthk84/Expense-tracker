@@ -92,4 +92,62 @@ router.get('/', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+/* ── CSV export ── GET /api/reports/export?id=2026-04&type=monthly */
+router.get('/export', async (req, res, next) => {
+  try {
+    const { id, type = 'monthly' } = req.query;
+    if (!id) return res.status(400).json({ error: 'id required' });
+
+    let txns = [];
+    let filename = `report-${id}.csv`;
+
+    if (type === 'monthly') {
+      const [y, mm] = id.split('-').map(Number);
+      const lastDay = new Date(y, mm, 0).getDate();
+      txns = await readTransactions({ from: `${id}-01`, to: `${id}-${pad(lastDay)}` });
+      filename = `${MONTH_NAMES[mm - 1]}-${y}.csv`;
+    } else if (type === 'quarterly') {
+      // id like "2026-Q1"
+      const [yearStr, qStr] = id.split('-');
+      const quarter = Number(qStr.replace('Q', ''));
+      const startM = (quarter - 1) * 3 + 1;
+      const y = Number(yearStr);
+      for (let m = startM; m < startM + 3; m++) {
+        const mm = String(m).padStart(2, '0');
+        const lastDay = new Date(y, m, 0).getDate();
+        const t = await readTransactions({ from: `${y}-${mm}-01`, to: `${y}-${mm}-${pad(lastDay)}` });
+        txns.push(...t);
+      }
+      filename = `${id}.csv`;
+    } else if (type === 'annual') {
+      const y = Number(id);
+      for (let m = 1; m <= 12; m++) {
+        const mm = String(m).padStart(2, '0');
+        const lastDay = new Date(y, m, 0).getDate();
+        try {
+          const t = await readTransactions({ from: `${y}-${mm}-01`, to: `${y}-${mm}-${pad(lastDay)}` });
+          txns.push(...t);
+        } catch { /* month may not exist */ }
+      }
+      filename = `${id}-annual.csv`;
+    }
+
+    const rows = [
+      ['Date', 'Description', 'Category', 'Amount', 'Type'],
+      ...txns.map((t) => [
+        t.date,
+        `"${(t.label || t.note || '').replace(/"/g, '""')}"`,
+        t.category || '',
+        t.amount.toFixed(2),
+        t.isIncome ? 'Income' : 'Expense'
+      ])
+    ];
+    const csv = rows.map((r) => r.join(',')).join('\r\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (e) { next(e); }
+});
+
 export default router;

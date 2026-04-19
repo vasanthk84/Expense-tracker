@@ -19,9 +19,13 @@ router.put('/budgets', async (req, res, next) => {
 
 router.patch('/budgets/:categoryId', async (req, res, next) => {
   try {
-    const budgets = await readJSON('budgets.json', {});
+    const raw = await readJSON('budgets.json', {});
     if (typeof req.body.amount !== 'number' || req.body.amount < 0)
       return res.status(400).json({ error: 'amount must be a non-negative number' });
+    // normalize to plain object regardless of storage format
+    const budgets = Array.isArray(raw)
+      ? Object.fromEntries(raw.map((b) => [b.categoryId, b.amount]))
+      : (raw && typeof raw === 'object' ? raw : {});
     budgets[req.params.categoryId] = req.body.amount;
     await writeJSON('budgets.json', budgets);
     res.json(budgets);
