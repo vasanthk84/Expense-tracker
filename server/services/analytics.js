@@ -108,22 +108,20 @@ export async function categoryBreakdown({ from, to }) {
   const top = sorted.slice(0, 4);
   const rest = sorted.slice(4);
   const restTotal = rest.reduce((s, c) => s + c.value, 0);
-  const slices = [
-    ...top.map((c, i) => ({
-      label: c.name,
-      value: Math.round((c.value / total) * 100),
-      amount: Math.round(c.value * 100) / 100,
-      color: colors[i] || colors[colors.length - 1]
-    }))
-  ];
-  if (restTotal > 0) {
-    slices.push({
-      label: 'Other',
-      value: Math.round((restTotal / total) * 100),
-      amount: Math.round(restTotal * 100) / 100,
-      color: colors[4]
-    });
-  }
+ const slices = [
+  ...top.map((c, i) => ({
+    label: c.name,
+    value: Math.round(c.value * 100) / 100,        // ← dollars ✓
+    color: colors[i] || colors[colors.length - 1]
+  }))
+];
+if (restTotal > 0) {
+  slices.push({
+    label: 'Other',
+    value: Math.round(restTotal * 100) / 100,      // ← dollars ✓
+    color: colors[4]
+  });
+}
   return { total: Math.round(total * 100) / 100, slices };
 }
 
