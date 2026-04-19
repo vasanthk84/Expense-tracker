@@ -1,3 +1,10 @@
+/**
+ * BudgetPlanningScreen.jsx
+ *
+ * FIX: bp-vals was rendering raw numbers like `$186.4` instead of `$186.40`
+ * and `0` instead of `$0.00`.  Now uses formatMoney() consistently.
+ * Also shows overAmount formatted correctly.
+ */
 import { useState } from 'react';
 import AppHeader from '../components/layout/AppHeader.jsx';
 import Card from '../components/ui/Card.jsx';
@@ -14,18 +21,18 @@ import {
   useBudgetMutations
 } from '../hooks/useData.js';
 import { useToast } from '../context/ToastContext.jsx';
-import { currentMonth } from '../utils/date.js';
+import { currentMonth, formatMoney } from '../utils/date.js';
 
 export default function BudgetPlanningScreen() {
-  const month = currentMonth();
-  const summary = useMonthSummary(month);
+  const month       = currentMonth();
+  const summary     = useMonthSummary(month);
   const utilization = useBudgetUtilization(month);
   const { setCategory } = useBudgetMutations();
   const toast = useToast();
 
-  const [editing, setEditing] = useState(null); // { id, name, current }
-  const [draft, setDraft] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(null); // { id, name, budget }
+  const [draft,   setDraft]   = useState('');
+  const [saving,  setSaving]  = useState(false);
 
   const startEdit = (cat) => {
     setEditing(cat);
@@ -43,7 +50,7 @@ export default function BudgetPlanningScreen() {
       await setCategory(editing.id, value);
       toast.show(`${editing.name} budget updated`);
       setEditing(null);
-    } catch (err) {
+    } catch {
       toast.show('Failed to save');
     } finally {
       setSaving(false);
@@ -58,7 +65,6 @@ export default function BudgetPlanningScreen() {
         right={<button className="icon-btn"><Icon name="plus" size={16} /></button>}
       />
 
-      {/* Utilization hero */}
       <AsyncBoundary state={summary}>
         {summary.data && <UtilizationCard summary={summary.data} />}
       </AsyncBoundary>
@@ -69,29 +75,41 @@ export default function BudgetPlanningScreen() {
         {utilization.data && (
           <Card variant="flush">
             {utilization.data.map((b) => {
-              const isOver = b.pct > 100;
+              const isOver     = b.pct > 100;
               const overAmount = b.spent - b.budget;
               return (
-                <div key={b.id} className="budget-plan-row" onClick={() => startEdit(b)} style={{ cursor: 'pointer' }}>
+                <div
+                  key={b.id}
+                  className="budget-plan-row"
+                  onClick={() => startEdit(b)}
+                  style={{ cursor: 'pointer' }}
+                >
                   <div className="bp-head">
                     <div className="bp-title">
                       <CategoryIcon icon={b.icon} tone={b.tone} />
                       <div>
                         <div className="bp-name">{b.name}</div>
                         <div className={`bp-pct ${isOver ? 'danger' : ''}`}>
-                          {b.budget > 0 ? `${b.pct}% ${isOver ? '· over' : 'used'}` : 'No budget set'}
+                          {b.budget > 0
+                            ? `${b.pct}% ${isOver ? '· over' : 'used'}`
+                            : 'No budget set'}
                         </div>
                       </div>
                     </div>
+                    {/* FIX: was `${b.spent}` / `${b.budget}` — now formatMoney */}
                     <div className={`bp-vals ${isOver ? 'over' : ''}`}>
-                      <span className="spent">${b.spent}</span> / ${b.budget}
+                      <span className="spent">
+                        {formatMoney(b.spent, { withCents: true })}
+                      </span>
+                      {' / '}
+                      {formatMoney(b.budget, { withCents: true })}
                     </div>
                   </div>
                   {b.budget > 0 && <ProgressBar value={b.pct} size="md" />}
                   {isOver && (
                     <div className="bp-alert">
                       <Icon name="alert" size={12} />
-                      ${overAmount.toFixed(2)} over budget. Consider reducing by week's end.
+                      {formatMoney(overAmount, { withCents: true })} over budget. Consider reducing by week's end.
                     </div>
                   )}
                 </div>
@@ -127,7 +145,10 @@ export default function BudgetPlanningScreen() {
         </Button>
         <button
           className="btn-sm"
-          style={{ width: '100%', marginTop: 8, background: 'transparent', border: 'none', color: 'var(--ink-3)' }}
+          style={{
+            width: '100%', marginTop: 8,
+            background: 'transparent', border: 'none', color: 'var(--ink-3)'
+          }}
           onClick={() => setEditing(null)}
           disabled={saving}
         >
@@ -141,16 +162,21 @@ export default function BudgetPlanningScreen() {
 }
 
 function UtilizationCard({ summary }) {
-  const pct = summary.budget > 0 ? Math.round((summary.spent / summary.budget) * 100) : 0;
+  const pct = summary.budget > 0
+    ? Math.round((summary.spent / summary.budget) * 100)
+    : 0;
   return (
     <Card style={{ position: 'relative', overflow: 'hidden' }}>
       <div className="hero-label" style={{ color: 'var(--ink-3)' }}>
         {summary.monthLabel} utilization
       </div>
-      <div className="hero-amount" style={{ color: 'var(--ink)' }}>
+      <div className="hero-amount" style={{ color: 'var(--ink)', fontSize: 36 }}>
         {pct}<span style={{ fontSize: 22, opacity: 0.7 }}>%</span>
       </div>
-      <div style={{ marginTop: 14, height: 8, background: 'var(--surface-2)', borderRadius: 4, overflow: 'hidden' }}>
+      <div style={{
+        marginTop: 14, height: 8,
+        background: 'var(--surface-2)', borderRadius: 4, overflow: 'hidden'
+      }}>
         <div style={{
           height: '100%',
           width: `${Math.min(100, pct)}%`,
@@ -158,15 +184,11 @@ function UtilizationCard({ summary }) {
         }} />
       </div>
       <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        marginTop: 8,
-        fontFamily: 'var(--font-mono)',
-        fontSize: 10,
-        color: 'var(--ink-3)'
+        display: 'flex', justifyContent: 'space-between',
+        marginTop: 8, fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--ink-3)'
       }}>
-        <span>${summary.spent.toLocaleString()} spent</span>
-        <span>${summary.budget.toLocaleString()} budget</span>
+        <span>{formatMoney(summary.spent, { withCents: false })} spent</span>
+        <span>{formatMoney(summary.budget, { withCents: false })} budget</span>
       </div>
     </Card>
   );

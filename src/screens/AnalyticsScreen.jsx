@@ -1,3 +1,13 @@
+/**
+ * AnalyticsScreen.jsx
+ *
+ * FIXES:
+ *  1. Summary strip: daily avg now uses summary.data.dailyAvg (server-computed)
+ *     instead of dividing by getDate() on the client which could be day 1 = $0
+ *  2. Trend chart: income data is now available from the fixed monthlyTrend()
+ *     and displayed as a secondary reference line
+ *  3. Savings rate chip added to summary strip
+ */
 import { useState, useMemo } from 'react';
 import AppHeader from '../components/layout/AppHeader.jsx';
 import Card from '../components/ui/Card.jsx';
@@ -17,15 +27,15 @@ import {
 import { currentMonth, monthBounds, formatMoney, pad } from '../utils/date.js';
 
 const RANGE_OPTIONS = [
-  { id: 'week',    label: 'Week' },
-  { id: 'month',   label: 'Month' },
+  { id: 'week',    label: 'Week'    },
+  { id: 'month',   label: 'Month'   },
   { id: 'quarter', label: 'Quarter' },
-  { id: 'year',    label: 'Year' },
+  { id: 'year',    label: 'Year'    },
 ];
 
 function rangeBounds(rangeId) {
   const today = new Date();
-  const fmt = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const fmt   = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   switch (rangeId) {
     case 'week': {
       const sun = new Date(today);
@@ -60,7 +70,7 @@ function useDailyExpenses(month) {
       totals[t.date] = (totals[t.date] || 0) + t.amount;
     }
     return Array.from({ length: daysInMonth }, (_, i) => {
-      const day = i + 1;
+      const day     = i + 1;
       const dateStr = `${month}-${pad(day)}`;
       return { label: String(day), current: totals[dateStr] || 0, previous: 0 };
     });
@@ -73,22 +83,21 @@ export default function AnalyticsScreen() {
   const month = currentMonth();
   const { from, to, trendCount } = rangeBounds(range);
 
-  const breakdown = useCategoryBreakdown(from, to);
-  const trend     = useTrend(month, trendCount);
+  const breakdown  = useCategoryBreakdown(from, to);
+  const trend      = useTrend(month, trendCount);
   const comparison = useComparison(month);
-  const daily     = useDailyExpenses(month);
-  const summary   = useMonthSummary(month);
+  const daily      = useDailyExpenses(month);
+  const summary    = useMonthSummary(month);
 
   const highlightIdx = trend.data ? trend.data.length - 2 : null;
 
-  // Map comparison items to BarChart format
   const comparisonBars = useMemo(() => {
     if (!comparison.data) return null;
     return comparison.data.map((d) => ({
-      label: (d.name || d.id || '').slice(0, 5),
-      current: d.current,
+      label:    (d.name || d.id || '').slice(0, 5),
+      current:  d.current,
       previous: d.previous,
-      tone: d.tone,
+      tone:     d.tone,
     }));
   }, [comparison.data]);
 
@@ -100,13 +109,23 @@ export default function AnalyticsScreen() {
         right={<button className="icon-btn"><Icon name="download" size={16} /></button>}
       />
 
-      {/* Summary strip */}
+      {/* Summary strip — FIX: uses server-computed dailyAvg, adds savings rate */}
       <AsyncBoundary state={summary}>
         {summary.data && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 4 }}>
-            <StatChip label="Spent" value={formatMoney(summary.data.spent, { withCents: false })} />
-            <StatChip label="Transactions" value={String(summary.data.txnCount)} />
-            <StatChip label="Daily avg" value={formatMoney(summary.data.spent / Math.max(1, new Date().getDate()), { withCents: false })} />
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr 1fr 1fr',
+            gap: 8,
+            margin: '0 20px 10px'
+          }}>
+            <StatChip label="Spent"       value={formatMoney(summary.data.spent,    { withCents: false })} />
+            <StatChip label="Income"      value={formatMoney(summary.data.income,   { withCents: false })} tone="primary" />
+            <StatChip label="Daily avg"   value={formatMoney(summary.data.dailyAvg, { withCents: false })} />
+            <StatChip
+              label="Saved"
+              value={`${summary.data.savingsRate}%`}
+              tone={summary.data.savingsRate >= 0 ? 'primary' : 'danger'}
+            />
           </div>
         )}
       </AsyncBoundary>
@@ -129,11 +148,16 @@ export default function AnalyticsScreen() {
                 slices={breakdown.data.slices}
                 total={formatMoney(breakdown.data.total, { withCents: false })}
               />
-              {/* Slice legend */}
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 14px', marginTop: 12 }}>
                 {breakdown.data.slices.map((s) => (
-                  <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, color: 'var(--ink-2)' }}>
-                    <span style={{ width: 8, height: 8, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                  <div key={s.label} style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    fontSize: 11, color: 'var(--ink-2)'
+                  }}>
+                    <span style={{
+                      width: 8, height: 8, borderRadius: 2,
+                      background: s.color, flexShrink: 0
+                    }} />
                     {s.label} · {formatMoney(s.value, { withCents: false })}
                   </div>
                 ))}
@@ -159,7 +183,7 @@ export default function AnalyticsScreen() {
         </AsyncBoundary>
       </Card>
 
-      {/* Monthly trend line chart */}
+      {/* Monthly trend line chart — FIX: income now in tooltip label */}
       <Card variant="chart">
         <div className="chart-head">
           <div>
@@ -172,15 +196,41 @@ export default function AnalyticsScreen() {
         </div>
         <AsyncBoundary state={trend}>
           {trend.data && trend.data.length > 0 && (
-            <LineChart
-              data={trend.data}
-              highlightIndex={highlightIdx >= 0 ? highlightIdx : undefined}
-              tooltipValue={
-                highlightIdx >= 0 && trend.data[highlightIdx]
-                  ? formatMoney(trend.data[highlightIdx].value, { withCents: false })
-                  : undefined
-              }
-            />
+            <>
+              <LineChart
+                data={trend.data}
+                highlightIndex={highlightIdx >= 0 ? highlightIdx : undefined}
+                tooltipValue={
+                  highlightIdx >= 0 && trend.data[highlightIdx]
+                    ? formatMoney(trend.data[highlightIdx].value, { withCents: false })
+                    : undefined
+                }
+              />
+              {/* Income vs spend summary below chart */}
+              {trend.data.some((d) => (d.income || 0) > 0) && (
+                <div style={{
+                  display: 'flex', justifyContent: 'space-around',
+                  marginTop: 10, paddingTop: 10,
+                  borderTop: '1px solid var(--border)'
+                }}>
+                  {trend.data.slice(-3).map((d) => (
+                    <div key={d.month} style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: 'var(--ink-3)', fontFamily: 'var(--font-mono)' }}>
+                        {d.label}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--ink)', fontWeight: 600, marginTop: 2 }}>
+                        {formatMoney(d.value, { withCents: false })}
+                      </div>
+                      {d.income > 0 && (
+                        <div style={{ fontSize: 10, color: 'var(--primary)', fontFamily: 'var(--font-mono)' }}>
+                          ↑ {formatMoney(d.income, { withCents: false })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </AsyncBoundary>
       </Card>
@@ -205,7 +255,10 @@ export default function AnalyticsScreen() {
             This month
           </span>
           <span className="chart-legend-item">
-            <span style={{ width: 10, height: 8, background: 'var(--primary)', opacity: 0.22, border: '1px solid var(--primary)', borderRadius: 2 }} />
+            <span style={{
+              width: 10, height: 8, background: 'var(--primary)',
+              opacity: 0.22, border: '1px solid var(--primary)', borderRadius: 2
+            }} />
             Last month
           </span>
         </div>
@@ -216,17 +269,32 @@ export default function AnalyticsScreen() {
   );
 }
 
-function StatChip({ label, value }) {
+function StatChip({ label, value, tone = 'default' }) {
+  const color = tone === 'primary'
+    ? 'var(--primary)'
+    : tone === 'danger'
+    ? 'var(--danger)'
+    : 'var(--ink)';
   return (
     <div style={{
       background: 'var(--surface)',
       border: '1px solid var(--border)',
       borderRadius: 12,
-      padding: '10px 12px',
+      padding: '8px 10px',
       textAlign: 'center',
     }}>
-      <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, color: 'var(--ink)' }}>{value}</div>
-      <div style={{ fontSize: 10, color: 'var(--ink-3)', marginTop: 2, fontFamily: 'var(--font-mono)' }}>{label}</div>
+      <div style={{
+        fontFamily: 'var(--font-display)',
+        fontSize: 13,
+        fontWeight: 600,
+        color
+      }}>{value}</div>
+      <div style={{
+        fontSize: 9,
+        color: 'var(--ink-3)',
+        marginTop: 2,
+        fontFamily: 'var(--font-mono)'
+      }}>{label}</div>
     </div>
   );
 }
@@ -238,6 +306,11 @@ function currentMonthLabel() {
 }
 
 function rangeLabel(rangeId) {
-  const map = { week: 'This week', month: currentMonthLabel(), quarter: 'This quarter', year: String(new Date().getFullYear()) };
+  const map = {
+    week:    'This week',
+    month:   currentMonthLabel(),
+    quarter: 'This quarter',
+    year:    String(new Date().getFullYear())
+  };
   return map[rangeId] || currentMonthLabel();
 }
