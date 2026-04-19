@@ -62,6 +62,20 @@ function averageDailySpent(txns, yyyymm) {
   return total / spentDays;
 }
 
+/**
+ * Normalize budgets to always be an array of { categoryId, amount }.
+ * Handles both storage shapes:
+ *   object: { "food": 500, "transport": 200 }  ← written by config.js routes
+ *   array:  [{ categoryId: "food", amount: 500 }] ← legacy / seeded data
+ */
+function normalizeBudgets(raw) {
+  if (Array.isArray(raw)) return raw;
+  if (raw && typeof raw === 'object') {
+    return Object.entries(raw).map(([categoryId, amount]) => ({ categoryId, amount }));
+  }
+  return [];
+}
+
 export async function monthSummary(yyyymm) {
   const { from, to } = monthBounds(yyyymm);
   const txns = await readTransactions({ from, to });
@@ -77,11 +91,12 @@ export async function monthSummary(yyyymm) {
 
 export async function budgetUtilization(yyyymm) {
   const { from, to } = monthBounds(yyyymm);
-  const [txns, budgets, categories] = await Promise.all([
+  const [txns, rawBudgets, categories] = await Promise.all([
     readTransactions({ from, to }),
     readJSON('budgets.json', []),
     readJSON('categories.json', [])
   ]);
+  const budgets = normalizeBudgets(rawBudgets);
   const byCat = spendingByCategory(txns);
   const rows = budgets.map((b) => {
     const cat = categories.find((c) => c.id === b.categoryId) || { name: b.categoryId };
@@ -178,11 +193,12 @@ export async function forecast(endMonth, past = 6, future = 6) {
 
 export async function insights(yyyymm) {
   const { from, to } = monthBounds(yyyymm);
-  const [txns, budgets, categories] = await Promise.all([
+  const [txns, rawBudgets, categories] = await Promise.all([
     readTransactions({ from, to }),
     readJSON('budgets.json', []),
     readJSON('categories.json', [])
   ]);
+  const budgets = normalizeBudgets(rawBudgets);
   const byCat = spendingByCategory(txns);
   const topCat = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0];
   const topBudgetOver = budgets
